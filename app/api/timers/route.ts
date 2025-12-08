@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
       .from("timer_logs")
       .insert({
         configured_minutes: configuredMinutes,
-        executed_at: executedAt, // puede ser ISO string
+        executed_at: executedAt, // fecha y hora exacta
       })
       .select()
       .single();
