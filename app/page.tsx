@@ -30,6 +30,7 @@ export default function HomePage() {
   const [running, setRunning] = useState(false);
   const [logs, setLogs] = useState<TimerLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
+  const [targetTime, setTargetTime] = useState<number | null>(null);
 
   // Actualizar segundos cuando cambian los minutos (si no está corriendo)
   useEffect(() => {
@@ -40,18 +41,27 @@ export default function HomePage() {
 
   // Lógica del temporizador
   useEffect(() => {
-    if (!running) return;
-    if (remainingSeconds <= 0) {
-      setRunning(false);
-      return;
-    }
+    // Si no está corriendo o no hay hora objetivo, no hacemos nada
+    if (!running || !targetTime) return;
 
+    // Creamos un intervalo que se ejecuta aprox cada 1 segundo
     const interval = setInterval(() => {
-      setRemainingSeconds((prev) => prev - 1);
+      const now = Date.now(); // tiempo actual en ms
+      const diffMs = targetTime - now; // cuánto falta en ms
+      const diffSeconds = Math.max(0, Math.floor(diffMs / 1000)); // pasamos a segundos, nunca negativo
+
+      setRemainingSeconds(diffSeconds); // actualizamos el display
+
+      if (diffSeconds <= 0) {
+        setRunning(false); // detenemos el timer
+        clearInterval(interval); // limpiamos el intervalo
+      }
     }, 1000);
 
+    // Cleanup: si cambia `running` o `targetTime`, o el componente se desmonta,
+    // se limpia este intervalo para que no queden intervalos viejos vivos.
     return () => clearInterval(interval);
-  }, [running, remainingSeconds]);
+  }, [running, targetTime]);
 
   const cargarLogs = async () => {
     setLoadingLogs(true);
@@ -74,23 +84,24 @@ export default function HomePage() {
     if (minutes <= 0) return;
 
     const now = new Date();
+    const target = now.getTime() + minutes * 60 * 1000;
 
-    // 1. Arranca el temporizador
+    // 1. Configura el tiempo objetivo y arranca el timer
+    setTargetTime(target);
     setRemainingSeconds(minutes * 60);
     setRunning(true);
 
-    // 2. Guarda en Supabase a través de la API
+    // 2. Guarda en Supabase vía API (igual que antes)
     try {
       await fetch("/api/timers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           configuredMinutes: minutes,
-          executedAt: now.toISOString(), // aquí va fecha y hora exacta
+          executedAt: now.toISOString(),
         }),
       });
 
-      // recargar lista de logs
       await cargarLogs();
     } catch (err) {
       console.error("Error guardando el temporizador:", err);
@@ -103,6 +114,7 @@ export default function HomePage() {
 
   const handleReset = () => {
     setRunning(false);
+    setTargetTime(null);
     setRemainingSeconds(minutes * 60);
   };
 
