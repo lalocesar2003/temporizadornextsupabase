@@ -210,11 +210,10 @@ export default function HomePage() {
                 <table className="w-full text-sm">
                   <thead className="bg-slate-700">
                     <tr>
-                      <th className="px-2 py-1 text-left">Etiqueta</th>
-
                       <th className="px-2 py-1 text-left">Fecha</th>
                       <th className="px-2 py-1 text-left">Hora</th>
                       <th className="px-2 py-1 text-right">Min</th>
+                      <th className="px-2 py-1 text-left">Etiqueta</th>
                     </tr>
                   </thead>
                   <tbody>
