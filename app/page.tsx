@@ -7,6 +7,7 @@ type TimerLog = {
   configured_minutes: number;
   executed_at: string;
   created_at: string;
+  label: string | null; // NUEVO (si lo dejaste nullable, usa: string )
 };
 
 function formatTime(seconds: number) {
@@ -25,6 +26,7 @@ function formatDateTime(iso: string) {
 }
 
 export default function HomePage() {
+  const [label, setLabel] = useState<string>("");
   const [minutes, setMinutes] = useState<number>(1);
   const [remainingSeconds, setRemainingSeconds] = useState<number>(60);
   const [running, setRunning] = useState(false);
@@ -99,6 +101,7 @@ export default function HomePage() {
         body: JSON.stringify({
           configuredMinutes: minutes,
           executedAt: now.toISOString(),
+          label,
         }),
       });
 
@@ -139,7 +142,18 @@ export default function HomePage() {
                 disabled={running}
               />
             </label>
-
+            <label className="block text-sm">
+              Etiqueta:
+              <input
+                type="text"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                placeholder="Ej: Estudio, Trabajo, Gym..."
+                className="mt-1 w-full rounded-md bg-slate-700 px-3 py-2 outline-none"
+                disabled={running}
+                maxLength={80}
+              />
+            </label>
             <div className="text-center text-5xl font-mono">
               {formatTime(remainingSeconds)}
             </div>
@@ -196,6 +210,8 @@ export default function HomePage() {
                 <table className="w-full text-sm">
                   <thead className="bg-slate-700">
                     <tr>
+                      <th className="px-2 py-1 text-left">Etiqueta</th>
+
                       <th className="px-2 py-1 text-left">Fecha</th>
                       <th className="px-2 py-1 text-left">Hora</th>
                       <th className="px-2 py-1 text-right">Min</th>
@@ -214,6 +230,7 @@ export default function HomePage() {
                           <td className="px-2 py-1 text-right">
                             {log.configured_minutes}
                           </td>
+                          <td className="px-2 py-1">{log.label || "-"}</td>
                         </tr>
                       );
                     })}

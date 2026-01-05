@@ -6,9 +6,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    const { configuredMinutes, executedAt } = body as {
+    const { configuredMinutes, executedAt, label } = body as {
       configuredMinutes: number;
       executedAt: string; // ISO string
+      label?: string; // NUEVO
     };
 
     if (!configuredMinutes || configuredMinutes <= 0) {
@@ -18,11 +19,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const cleanLabel = typeof label === "string" ? label.trim() : "";
+
+    // (opcional) validación simple
+    if (cleanLabel.length > 80) {
+      return NextResponse.json(
+        { error: "label no debe superar 80 caracteres" },
+        { status: 400 }
+      );
+    }
+
     const { data, error } = await supabaseAdmin
       .from("timer_logs")
       .insert({
         configured_minutes: configuredMinutes,
-        executed_at: executedAt, // fecha y hora exacta
+        executed_at: executedAt,
+        label: cleanLabel, // NUEVO
       })
       .select()
       .single();
