@@ -66,6 +66,56 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
         );
       }
       updates.completed = body.completed;
+      updates.completed_at = body.completed ? new Date().toISOString() : null;
+
+      if (body.completed === false) {
+        const { data: maxRow, error: maxError } = await supabaseAdmin
+          .from("todo_items")
+          .select("position")
+          .eq("completed", false)
+          .order("position", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (maxError) {
+          console.error("Error leyendo posición máxima:", maxError);
+          return NextResponse.json(
+            { error: "Error al actualizar la tarea" },
+            { status: 500 }
+          );
+        }
+
+        updates.position = (maxRow?.position ?? 0) + 1;
+      }
+    }
+
+    if ("priority" in body) {
+      if (
+        typeof body.priority !== "number" ||
+        !Number.isInteger(body.priority) ||
+        body.priority < 1 ||
+        body.priority > 5
+      ) {
+        return NextResponse.json(
+          { error: "priority debe ser entero entre 1 y 5" },
+          { status: 400 }
+        );
+      }
+      updates.priority = body.priority;
+    }
+
+    if ("position" in body) {
+      if (
+        typeof body.position !== "number" ||
+        !Number.isInteger(body.position) ||
+        body.position < 1
+      ) {
+        return NextResponse.json(
+          { error: "position debe ser entero mayor o igual a 1" },
+          { status: 400 }
+        );
+      }
+      updates.position = body.position;
     }
 
     if (Object.keys(updates).length === 0) {

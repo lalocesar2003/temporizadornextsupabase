@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type DragEvent } from "react";
 
 type TimerLog = {
   id: number;
   configured_minutes: number;
   executed_at: string;
   created_at: string;
-  label: string | null; // NUEVO (si lo dejaste nullable, usa: string )
+  label: string | null;
 };
 
 type TodoItem = {
@@ -15,6 +15,9 @@ type TodoItem = {
   title: string;
   description: string | null;
   completed: boolean;
+  priority: number;
+  position: number;
+  completed_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -34,6 +37,33 @@ function formatDateTime(iso: string) {
   return { date, time };
 }
 
+function sortTodos(items: TodoItem[]) {
+  const pending = items
+    .filter((item) => !item.completed)
+    .sort((a, b) => {
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      if (a.position !== b.position) return a.position - b.position;
+      return (
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+    });
+
+  const completed = items
+    .filter((item) => item.completed)
+    .sort(
+      (a, b) =>
+        new Date(b.completed_at ?? b.updated_at).getTime() -
+        new Date(a.completed_at ?? a.updated_at).getTime()
+    );
+
+  return { pending, completed };
+}
+
+function buildPendingReorderPayload(items: TodoItem[]) {
+  const { pending } = sortTodos(items);
+  return pending.map((item, index) => ({ id: item.id, position: index + 1 }));
+}
+
 export default function HomePage() {
   const [label, setLabel] = useState<string>("");
   const [minutes, setMinutes] = useState<number>(1);
@@ -42,44 +72,48 @@ export default function HomePage() {
   const [logs, setLogs] = useState<TimerLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [targetTime, setTargetTime] = useState<number | null>(null);
+
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [loadingTodos, setLoadingTodos] = useState(false);
   const [todoTitle, setTodoTitle] = useState("");
   const [todoDescription, setTodoDescription] = useState("");
+  const [todoPriority, setTodoPriority] = useState(3);
   const [todoError, setTodoError] = useState<string | null>(null);
   const [submittingTodo, setSubmittingTodo] = useState(false);
   const [editingTodoId, setEditingTodoId] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [editingDescription, setEditingDescription] = useState("");
+  const [activeTodoTab, setActiveTodoTab] = useState<"pending" | "completed">(
+    "pending"
+  );
+  const [pendingPriorityFilter, setPendingPriorityFilter] = useState<
+    "all" | 1 | 2 | 3 | 4 | 5
+  >(1);
+  const [draggingTodoId, setDraggingTodoId] = useState<number | null>(null);
+  const [dropTargetTodoId, setDropTargetTodoId] = useState<number | null>(null);
 
-  // Actualizar segundos cuando cambian los minutos (si no está corriendo)
   useEffect(() => {
     if (!running) {
       setRemainingSeconds(minutes * 60);
     }
   }, [minutes, running]);
 
-  // Lógica del temporizador
   useEffect(() => {
-    // Si no está corriendo o no hay hora objetivo, no hacemos nada
     if (!running || !targetTime) return;
 
-    // Creamos un intervalo que se ejecuta aprox cada 1 segundo
     const interval = setInterval(() => {
-      const now = Date.now(); // tiempo actual en ms
-      const diffMs = targetTime - now; // cuánto falta en ms
-      const diffSeconds = Math.max(0, Math.floor(diffMs / 1000)); // pasamos a segundos, nunca negativo
+      const now = Date.now();
+      const diffMs = targetTime - now;
+      const diffSeconds = Math.max(0, Math.floor(diffMs / 1000));
 
-      setRemainingSeconds(diffSeconds); // actualizamos el display
+      setRemainingSeconds(diffSeconds);
 
       if (diffSeconds <= 0) {
-        setRunning(false); // detenemos el timer
-        clearInterval(interval); // limpiamos el intervalo
+        setRunning(false);
+        clearInterval(interval);
       }
     }, 1000);
 
-    // Cleanup: si cambia `running` o `targetTime`, o el componente se desmonta,
-    // se limpia este intervalo para que no queden intervalos viejos vivos.
     return () => clearInterval(interval);
   }, [running, targetTime]);
 
@@ -109,7 +143,7 @@ export default function HomePage() {
         throw new Error("No se pudieron obtener las tareas");
       }
       const data = await res.json();
-      setTodos(Array.isArray(data) ? data : []);
+      setTodos(Array.isArray(data) ? (data as TodoItem[]) : []);
     } catch (err) {
       console.error("Error cargando TODOs:", err);
       setTodoError("No se pudieron cargar las tareas.");
@@ -130,12 +164,10 @@ export default function HomePage() {
     const now = new Date();
     const target = now.getTime() + minutes * 60 * 1000;
 
-    // 1. Configura el tiempo objetivo y arranca el timer
     setTargetTime(target);
     setRemainingSeconds(minutes * 60);
     setRunning(true);
 
-    // 2. Guarda en Supabase vía API (igual que antes)
     try {
       const res = await fetch("/api/timers", {
         method: "POST",
@@ -186,6 +218,7 @@ export default function HomePage() {
         body: JSON.stringify({
           title: cleanTitle,
           description: cleanDescription,
+          priority: todoPriority,
         }),
       });
 
@@ -194,9 +227,10 @@ export default function HomePage() {
         throw new Error(data?.error || "No se pudo crear la tarea");
       }
 
-      setTodos((prev) => [data as TodoItem, ...prev]);
+      setTodos((prev) => [...prev, data as TodoItem]);
       setTodoTitle("");
       setTodoDescription("");
+      setTodoPriority(3);
     } catch (err) {
       console.error("Error creando TODO:", err);
       setTodoError("No se pudo crear la tarea.");
@@ -206,10 +240,20 @@ export default function HomePage() {
   };
 
   const handleToggleTodo = async (todo: TodoItem) => {
-    const previousCompleted = todo.completed;
+    const nextCompleted = !todo.completed;
+    const prevTodos = todos;
+    const nowIso = new Date().toISOString();
+
+    setTodoError(null);
     setTodos((prev) =>
       prev.map((item) =>
-        item.id === todo.id ? { ...item, completed: !item.completed } : item
+        item.id === todo.id
+          ? {
+              ...item,
+              completed: nextCompleted,
+              completed_at: nextCompleted ? nowIso : null,
+            }
+          : item
       )
     );
 
@@ -217,7 +261,7 @@ export default function HomePage() {
       const res = await fetch(`/api/todos/${todo.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ completed: !previousCompleted }),
+        body: JSON.stringify({ completed: nextCompleted }),
       });
 
       const data = await res.json();
@@ -231,11 +275,147 @@ export default function HomePage() {
     } catch (err) {
       console.error("Error cambiando estado de TODO:", err);
       setTodoError("No se pudo actualizar el estado de la tarea.");
-      setTodos((prev) =>
-        prev.map((item) =>
-          item.id === todo.id ? { ...item, completed: previousCompleted } : item
-        )
-      );
+      setTodos(prevTodos);
+    }
+  };
+
+  const handlePriorityChange = async (todo: TodoItem, nextPriority: number) => {
+    if (todo.priority === nextPriority) return;
+
+    const prevTodos = todos;
+    const optimistic = todos.map((item) =>
+      item.id === todo.id ? { ...item, priority: nextPriority } : item
+    );
+    setTodos(optimistic);
+
+    const reorderItems = buildPendingReorderPayload(optimistic);
+    const normalized = optimistic.map((item) => {
+      const next = reorderItems.find((r) => r.id === item.id);
+      return next ? { ...item, position: next.position } : item;
+    });
+    setTodos(normalized);
+
+    try {
+      const patchRes = await fetch(`/api/todos/${todo.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priority: nextPriority }),
+      });
+
+      const patchData = await patchRes.json();
+      if (!patchRes.ok) {
+        throw new Error(patchData?.error || "No se pudo actualizar prioridad");
+      }
+
+      const reorderRes = await fetch("/api/todos/reorder", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: reorderItems }),
+      });
+      const reorderData = await reorderRes.json();
+      if (!reorderRes.ok) {
+        throw new Error(reorderData?.error || "No se pudo actualizar orden");
+      }
+
+      await cargarTodos();
+    } catch (err) {
+      console.error("Error actualizando prioridad:", err);
+      setTodoError("No se pudo actualizar la prioridad.");
+      setTodos(prevTodos);
+    }
+  };
+
+  const handlePendingDragStart = (todoId: number) => {
+    setDraggingTodoId(todoId);
+    setDropTargetTodoId(null);
+  };
+
+  const handlePendingDragOver = (
+    event: DragEvent<HTMLDivElement>,
+    targetTodoId: number
+  ) => {
+    if (!draggingTodoId || draggingTodoId === targetTodoId) return;
+
+    const dragged = pendingTodos.find((item) => item.id === draggingTodoId);
+    const target = pendingTodos.find((item) => item.id === targetTodoId);
+    if (!dragged || !target || dragged.priority !== target.priority) return;
+
+    event.preventDefault();
+    setDropTargetTodoId(targetTodoId);
+  };
+
+  const handlePendingDragEnd = () => {
+    setDraggingTodoId(null);
+    setDropTargetTodoId(null);
+  };
+
+  const handlePendingDrop = async (targetTodoId: number) => {
+    if (!draggingTodoId || draggingTodoId === targetTodoId) {
+      handlePendingDragEnd();
+      return;
+    }
+
+    const dragged = pendingTodos.find((item) => item.id === draggingTodoId);
+    const target = pendingTodos.find((item) => item.id === targetTodoId);
+    if (!dragged || !target || dragged.priority !== target.priority) {
+      handlePendingDragEnd();
+      return;
+    }
+
+    const samePriority = pendingTodos.filter(
+      (item) => item.priority === dragged.priority
+    );
+    const draggedIndex = samePriority.findIndex(
+      (item) => item.id === draggingTodoId
+    );
+    const targetIndex = samePriority.findIndex(
+      (item) => item.id === targetTodoId
+    );
+
+    if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) {
+      handlePendingDragEnd();
+      return;
+    }
+
+    const reorderedPriority = [...samePriority];
+    const [moved] = reorderedPriority.splice(draggedIndex, 1);
+    reorderedPriority.splice(targetIndex, 0, moved);
+
+    let cursor = 0;
+    const reorderedPending = pendingTodos.map((item) =>
+      item.priority === dragged.priority ? reorderedPriority[cursor++] : item
+    );
+    const reorderItems = reorderedPending.map((item, index) => ({
+      id: item.id,
+      position: index + 1,
+    }));
+
+    const prevTodos = todos;
+    const reorderMap = new Map(reorderItems.map((item) => [item.id, item.position]));
+    const optimisticTodos = todos.map((item) =>
+      reorderMap.has(item.id)
+        ? { ...item, position: reorderMap.get(item.id) ?? item.position }
+        : item
+    );
+
+    setTodoError(null);
+    setTodos(optimisticTodos);
+    handlePendingDragEnd();
+
+    try {
+      const res = await fetch("/api/todos/reorder", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: reorderItems }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "No se pudo reordenar");
+      }
+    } catch (err) {
+      console.error("Error reordenando TODOs con drag and drop:", err);
+      setTodoError("No se pudo guardar el nuevo orden.");
+      setTodos(prevTodos);
     }
   };
 
@@ -308,6 +488,12 @@ export default function HomePage() {
     }
   };
 
+  const { pending: pendingTodos, completed: completedTodos } = sortTodos(todos);
+  const visiblePendingTodos =
+    pendingPriorityFilter === "all"
+      ? pendingTodos
+      : pendingTodos.filter((item) => item.priority === pendingPriorityFilter);
+
   return (
     <main className="min-h-screen bg-slate-900 text-white">
       <div className="mx-auto w-full max-w-5xl p-4 md:p-6 space-y-6">
@@ -316,7 +502,6 @@ export default function HomePage() {
             Temporizador con registro en Supabase
           </h1>
 
-          {/* Configuración y display del temporizador */}
           <div className="grid md:grid-cols-2 gap-6">
             <div className="space-y-4">
               <label className="block text-sm">
@@ -375,7 +560,6 @@ export default function HomePage() {
               </p>
             </div>
 
-            {/* Lista de últimos registros */}
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <h2 className="font-semibold">Últimos registros</h2>
@@ -440,7 +624,7 @@ export default function HomePage() {
             </button>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+          <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto_auto]">
             <input
               type="text"
               value={todoTitle}
@@ -457,6 +641,17 @@ export default function HomePage() {
               className="rounded-md bg-slate-700 px-3 py-2 outline-none"
               maxLength={500}
             />
+            <select
+              value={todoPriority}
+              onChange={(e) => setTodoPriority(Number(e.target.value))}
+              className="rounded-md bg-slate-700 px-3 py-2 outline-none"
+            >
+              <option value={1}>Prioridad 1</option>
+              <option value={2}>Prioridad 2</option>
+              <option value={3}>Prioridad 3</option>
+              <option value={4}>Prioridad 4</option>
+              <option value={5}>Prioridad 5</option>
+            </select>
             <button
               onClick={handleCreateTodo}
               disabled={submittingTodo}
@@ -466,76 +661,140 @@ export default function HomePage() {
             </button>
           </div>
 
-          {todoError ? (
-            <p className="text-sm text-red-300">{todoError}</p>
-          ) : null}
+          {todoError ? <p className="text-sm text-red-300">{todoError}</p> : null}
+
+          <div className="inline-flex rounded-lg bg-slate-900 p-1">
+            <button
+              onClick={() => setActiveTodoTab("pending")}
+              className={`px-3 py-1.5 text-sm rounded-md ${
+                activeTodoTab === "pending"
+                  ? "bg-slate-700 text-white"
+                  : "text-slate-300"
+              }`}
+            >
+              Pendientes
+            </button>
+            <button
+              onClick={() => setActiveTodoTab("completed")}
+              className={`px-3 py-1.5 text-sm rounded-md ${
+                activeTodoTab === "completed"
+                  ? "bg-slate-700 text-white"
+                  : "text-slate-300"
+              }`}
+            >
+              Completadas
+            </button>
+          </div>
 
           {loadingTodos ? (
             <p className="text-sm text-slate-400">Cargando tareas...</p>
-          ) : todos.length === 0 ? (
-            <p className="text-sm text-slate-400">No hay tareas todavía.</p>
-          ) : (
+          ) : activeTodoTab === "pending" ? (
             <div className="space-y-3">
-              {todos.map((todo) => {
-                const isEditing = editingTodoId === todo.id;
-                return (
-                  <div
-                    key={todo.id}
-                    className="rounded-lg border border-slate-700 bg-slate-900/60 p-3"
-                  >
-                    <div className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={todo.completed}
-                        onChange={() => handleToggleTodo(todo)}
-                        className="mt-1 h-4 w-4"
-                      />
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-semibold">Pendientes</h3>
+                <select
+                  value={pendingPriorityFilter}
+                  onChange={(e) =>
+                    setPendingPriorityFilter(
+                      e.target.value === "all"
+                        ? "all"
+                        : (Number(e.target.value) as 1 | 2 | 3 | 4 | 5)
+                    )
+                  }
+                  className="rounded bg-slate-700 px-2 py-1 text-sm"
+                >
+                  <option value={1}>Solo P1</option>
+                  <option value={2}>Solo P2</option>
+                  <option value={3}>Solo P3</option>
+                  <option value={4}>Solo P4</option>
+                  <option value={5}>Solo P5</option>
+                  <option value="all">Todas</option>
+                </select>
+              </div>
+              {visiblePendingTodos.length === 0 ? (
+                <p className="text-sm text-slate-400">No hay tareas pendientes.</p>
+              ) : (
+                visiblePendingTodos.map((todo) => {
+                  const isEditing = editingTodoId === todo.id;
+                  const isDragged = draggingTodoId === todo.id;
+                  const isDropTarget = dropTargetTodoId === todo.id;
 
-                      <div className="flex-1 space-y-2">
-                        {isEditing ? (
-                          <>
-                            <input
-                              type="text"
-                              value={editingTitle}
-                              onChange={(e) => setEditingTitle(e.target.value)}
-                              className="w-full rounded-md bg-slate-700 px-3 py-2 outline-none"
-                              maxLength={120}
-                            />
-                            <textarea
-                              value={editingDescription}
-                              onChange={(e) =>
-                                setEditingDescription(e.target.value)
-                              }
-                              className="w-full rounded-md bg-slate-700 px-3 py-2 outline-none"
-                              rows={2}
-                              maxLength={500}
-                            />
-                          </>
-                        ) : (
-                          <>
-                            <p
-                              className={`font-medium ${
-                                todo.completed
-                                  ? "line-through text-slate-400"
-                                  : "text-white"
-                              }`}
-                            >
-                              {todo.title}
-                            </p>
-                            {todo.description ? (
-                              <p className="text-sm text-slate-300">
-                                {todo.description}
+                  return (
+                    <div
+                      key={todo.id}
+                      draggable={!isEditing}
+                      onDragStart={() => handlePendingDragStart(todo.id)}
+                      onDragOver={(event) => handlePendingDragOver(event, todo.id)}
+                      onDrop={() => handlePendingDrop(todo.id)}
+                      onDragEnd={handlePendingDragEnd}
+                      className={`rounded-lg border bg-slate-900/60 p-3 transition ${
+                        isDropTarget
+                          ? "border-cyan-400"
+                          : "border-slate-700"
+                      } ${isDragged ? "opacity-60" : ""}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={todo.completed}
+                          onChange={() => handleToggleTodo(todo)}
+                          className="mt-1 h-4 w-4"
+                        />
+
+                        <div className="flex-1 space-y-2">
+                          {isEditing ? (
+                            <>
+                              <input
+                                type="text"
+                                value={editingTitle}
+                                onChange={(e) => setEditingTitle(e.target.value)}
+                                className="w-full rounded-md bg-slate-700 px-3 py-2 outline-none"
+                                maxLength={120}
+                              />
+                              <textarea
+                                value={editingDescription}
+                                onChange={(e) =>
+                                  setEditingDescription(e.target.value)
+                                }
+                                className="w-full rounded-md bg-slate-700 px-3 py-2 outline-none"
+                                rows={2}
+                                maxLength={500}
+                              />
+                            </>
+                          ) : (
+                            <>
+                              <p className="font-medium text-white">{todo.title}</p>
+                              {todo.description ? (
+                                <p className="text-sm text-slate-300">
+                                  {todo.description}
+                                </p>
+                              ) : null}
+                              <p className="text-xs text-slate-500">
+                                Creada: {formatDateTime(todo.created_at).date}{" "}
+                                {formatDateTime(todo.created_at).time}
                               </p>
-                            ) : null}
-                            <p className="text-xs text-slate-500">
-                              Creada: {formatDateTime(todo.created_at).date}{" "}
-                              {formatDateTime(todo.created_at).time}
-                            </p>
-                          </>
-                        )}
+                            </>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="flex gap-2">
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <select
+                          value={todo.priority}
+                          onChange={(e) =>
+                            handlePriorityChange(todo, Number(e.target.value))
+                          }
+                          className="rounded bg-slate-700 px-2 py-1 text-sm"
+                          disabled={isEditing}
+                        >
+                          <option value={1}>P1</option>
+                          <option value={2}>P2</option>
+                          <option value={3}>P3</option>
+                          <option value={4}>P4</option>
+                          <option value={5}>P5</option>
+                        </select>
+                        <span className="text-xs text-slate-400">Arrastra para reordenar</span>
+
                         {isEditing ? (
                           <>
                             <button
@@ -569,9 +828,54 @@ export default function HomePage() {
                         )}
                       </div>
                     </div>
+                  );
+                })
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <h3 className="font-semibold">Completadas</h3>
+              {completedTodos.length === 0 ? (
+                <p className="text-sm text-slate-400">No hay tareas completadas.</p>
+              ) : (
+                completedTodos.map((todo) => (
+                  <div
+                    key={todo.id}
+                    className="rounded-lg border border-slate-700 bg-slate-900/60 p-3"
+                  >
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={todo.completed}
+                        onChange={() => handleToggleTodo(todo)}
+                        className="mt-1 h-4 w-4"
+                      />
+                      <div className="flex-1 space-y-1">
+                        <p className="font-medium line-through text-slate-400">
+                          {todo.title}
+                        </p>
+                        {todo.description ? (
+                          <p className="text-sm text-slate-400">
+                            {todo.description}
+                          </p>
+                        ) : null}
+                        {todo.completed_at ? (
+                          <p className="text-xs text-slate-500">
+                            Completada: {formatDateTime(todo.completed_at).date}{" "}
+                            {formatDateTime(todo.completed_at).time}
+                          </p>
+                        ) : null}
+                      </div>
+                      <button
+                        onClick={() => handleDeleteTodo(todo.id)}
+                        className="px-3 py-1 rounded bg-red-600 text-sm"
+                      >
+                        Borrar
+                      </button>
+                    </div>
                   </div>
-                );
-              })}
+                ))
+              )}
             </div>
           )}
         </section>
