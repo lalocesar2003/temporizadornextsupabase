@@ -114,26 +114,29 @@ export default function HomePage() {
       if (!audioContext) return;
 
       const startAt = audioContext.currentTime;
-      const pattern = [880, 660, 880];
+      const burstCount = 6;
 
-      pattern.forEach((frequency, index) => {
+      for (let index = 0; index < burstCount; index += 1) {
         const oscillator = audioContext.createOscillator();
         const gainNode = audioContext.createGain();
-        const toneStart = startAt + index * 0.22;
-        const toneEnd = toneStart + 0.18;
+        const toneStart = startAt + index * 0.42;
+        const toneMid = toneStart + 0.16;
+        const toneEnd = toneStart + 0.34;
 
-        oscillator.type = "sine";
-        oscillator.frequency.setValueAtTime(frequency, toneStart);
+        oscillator.type = "square";
+        oscillator.frequency.setValueAtTime(780, toneStart);
+        oscillator.frequency.linearRampToValueAtTime(1320, toneMid);
+        oscillator.frequency.linearRampToValueAtTime(780, toneEnd);
 
         gainNode.gain.setValueAtTime(0.0001, toneStart);
-        gainNode.gain.exponentialRampToValueAtTime(0.18, toneStart + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.32, toneStart + 0.03);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, toneEnd);
 
         oscillator.connect(gainNode);
         gainNode.connect(audioContext.destination);
         oscillator.start(toneStart);
         oscillator.stop(toneEnd);
-      });
+      }
     } catch (error) {
       console.error("No se pudo reproducir la alarma:", error);
     }
