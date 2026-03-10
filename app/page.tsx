@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffectEvent } from "react";
 
 type TimerLog = {
   id: number;
@@ -65,6 +66,7 @@ function buildPendingReorderPayload(items: TodoItem[]) {
 }
 
 export default function HomePage() {
+  const audioContextRef = useRef<AudioContext | null>(null);
   const [label, setLabel] = useState<string>("");
   const [minutes, setMinutes] = useState<number>(1);
   const [remainingSeconds, setRemainingSeconds] = useState<number>(60);
@@ -92,6 +94,51 @@ export default function HomePage() {
   const [draggingTodoId, setDraggingTodoId] = useState<number | null>(null);
   const [dropTargetTodoId, setDropTargetTodoId] = useState<number | null>(null);
 
+  const ensureAudioContext = async () => {
+    if (typeof window === "undefined") return null;
+
+    if (!audioContextRef.current) {
+      audioContextRef.current = new window.AudioContext();
+    }
+
+    if (audioContextRef.current.state === "suspended") {
+      await audioContextRef.current.resume();
+    }
+
+    return audioContextRef.current;
+  };
+
+  const playAlarm = useEffectEvent(async () => {
+    try {
+      const audioContext = await ensureAudioContext();
+      if (!audioContext) return;
+
+      const startAt = audioContext.currentTime;
+      const pattern = [880, 660, 880];
+
+      pattern.forEach((frequency, index) => {
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        const toneStart = startAt + index * 0.22;
+        const toneEnd = toneStart + 0.18;
+
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(frequency, toneStart);
+
+        gainNode.gain.setValueAtTime(0.0001, toneStart);
+        gainNode.gain.exponentialRampToValueAtTime(0.18, toneStart + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, toneEnd);
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        oscillator.start(toneStart);
+        oscillator.stop(toneEnd);
+      });
+    } catch (error) {
+      console.error("No se pudo reproducir la alarma:", error);
+    }
+  });
+
   useEffect(() => {
     if (!running) {
       setRemainingSeconds(minutes * 60);
@@ -111,6 +158,7 @@ export default function HomePage() {
       if (diffSeconds <= 0) {
         setRunning(false);
         clearInterval(interval);
+        void playAlarm();
       }
     }, 1000);
 
@@ -163,6 +211,8 @@ export default function HomePage() {
 
     const now = new Date();
     const target = now.getTime() + minutes * 60 * 1000;
+
+    await ensureAudioContext();
 
     setTargetTime(target);
     setRemainingSeconds(minutes * 60);
