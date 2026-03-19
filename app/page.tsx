@@ -23,6 +23,12 @@ type TodoItem = {
   updated_at: string;
 };
 
+type ThoughtLog = {
+  id: number;
+  content: string;
+  created_at: string;
+};
+
 function formatTime(seconds: number) {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -93,6 +99,12 @@ export default function HomePage() {
   >(1);
   const [draggingTodoId, setDraggingTodoId] = useState<number | null>(null);
   const [dropTargetTodoId, setDropTargetTodoId] = useState<number | null>(null);
+  const [thoughts, setThoughts] = useState<ThoughtLog[]>([]);
+  const [thoughtContent, setThoughtContent] = useState("");
+  const [thoughtError, setThoughtError] = useState<string | null>(null);
+  const [loadingThoughts, setLoadingThoughts] = useState(false);
+  const [savingThought, setSavingThought] = useState(false);
+  const [thoughtsModalOpen, setThoughtsModalOpen] = useState(false);
 
   const ensureAudioContext = async () => {
     if (typeof window === "undefined") return null;
@@ -204,10 +216,34 @@ export default function HomePage() {
     }
   };
 
+  const cargarThoughts = async () => {
+    setLoadingThoughts(true);
+    setThoughtError(null);
+    try {
+      const res = await fetch("/api/thoughts");
+      if (!res.ok) {
+        throw new Error("No se pudieron obtener los pensamientos");
+      }
+      const data = await res.json();
+      setThoughts(Array.isArray(data) ? (data as ThoughtLog[]) : []);
+    } catch (err) {
+      console.error("Error cargando pensamientos:", err);
+      setThoughtError("No se pudieron cargar los pensamientos.");
+      setThoughts([]);
+    } finally {
+      setLoadingThoughts(false);
+    }
+  };
+
   useEffect(() => {
     cargarLogs();
     cargarTodos();
   }, []);
+
+  useEffect(() => {
+    if (!thoughtsModalOpen) return;
+    void cargarThoughts();
+  }, [thoughtsModalOpen]);
 
   const handleStart = async () => {
     if (minutes <= 0) return;
@@ -425,7 +461,11 @@ export default function HomePage() {
       (item) => item.id === targetTodoId
     );
 
-    if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) {
+    if (
+      draggedIndex === -1 ||
+      targetIndex === -1 ||
+      draggedIndex === targetIndex
+    ) {
       handlePendingDragEnd();
       return;
     }
@@ -444,7 +484,9 @@ export default function HomePage() {
     }));
 
     const prevTodos = todos;
-    const reorderMap = new Map(reorderItems.map((item) => [item.id, item.position]));
+    const reorderMap = new Map(
+      reorderItems.map((item) => [item.id, item.position])
+    );
     const optimisticTodos = todos.map((item) =>
       reorderMap.has(item.id)
         ? { ...item, position: reorderMap.get(item.id) ?? item.position }
@@ -541,19 +583,67 @@ export default function HomePage() {
     }
   };
 
+  const handleSaveThought = async () => {
+    const cleanContent = thoughtContent.trim();
+
+    if (!cleanContent) {
+      setThoughtError("Escribe un pensamiento antes de guardarlo.");
+      return;
+    }
+
+    setSavingThought(true);
+    setThoughtError(null);
+
+    try {
+      const res = await fetch("/api/thoughts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: cleanContent }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "No se pudo guardar el pensamiento");
+      }
+
+      setThoughtContent("");
+      await cargarThoughts();
+    } catch (err) {
+      console.error("Error guardando pensamiento:", err);
+      setThoughtError("No se pudo guardar el pensamiento.");
+    } finally {
+      setSavingThought(false);
+    }
+  };
+
   const { pending: pendingTodos, completed: completedTodos } = sortTodos(todos);
   const visiblePendingTodos =
     pendingPriorityFilter === "all"
       ? pendingTodos
       : pendingTodos.filter((item) => item.priority === pendingPriorityFilter);
+  const latestLog = logs[0] ?? null;
+  const objectives = [
+    "comprar iphone",
+    "terminar app medicina",
+    "terminar plataforma de ordenamiento de documentos",
+    "crear bot que me ayude con decisiones",
+  ];
 
   return (
     <main className="min-h-screen bg-slate-900 text-white">
       <div className="mx-auto w-full max-w-5xl p-4 md:p-6 space-y-6">
         <div className="p-6 rounded-xl bg-slate-800 shadow-lg space-y-6">
-          <h1 className="text-2xl font-bold text-center">
-            Temporizador con registro en Supabase
-          </h1>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <h1 className="text-2xl font-bold text-center md:text-left">
+              Temporizador con registro en Supabase
+            </h1>
+            <button
+              onClick={() => setThoughtsModalOpen(true)}
+              className="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-600"
+            >
+              Pensamientos tontos y distracciones
+            </button>
+          </div>
 
           <div className="grid md:grid-cols-2 gap-6">
             <div className="space-y-4">
@@ -615,7 +705,7 @@ export default function HomePage() {
 
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <h2 className="font-semibold">Últimos registros</h2>
+                <h2 className="font-semibold">Último registro</h2>
                 <button
                   onClick={cargarLogs}
                   className="text-xs px-2 py-1 rounded bg-slate-700"
@@ -626,40 +716,54 @@ export default function HomePage() {
 
               {loadingLogs ? (
                 <p className="text-sm text-slate-400">Cargando registros...</p>
-              ) : logs.length === 0 ? (
+              ) : !latestLog ? (
                 <p className="text-sm text-slate-400">
                   Aún no hay registros de temporizadores.
                 </p>
               ) : (
-                <div className="max-h-64 overflow-auto border border-slate-700 rounded-lg">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-700">
-                      <tr>
-                        <th className="px-2 py-1 text-left">Fecha</th>
-                        <th className="px-2 py-1 text-left">Hora</th>
-                        <th className="px-2 py-1 text-right">Min</th>
-                        <th className="px-2 py-1 text-left">Etiqueta</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {logs.map((log) => {
-                        const { date, time } = formatDateTime(log.executed_at);
-                        return (
-                          <tr
-                            key={log.id}
-                            className="odd:bg-slate-800 even:bg-slate-900"
-                          >
-                            <td className="px-2 py-1">{date}</td>
-                            <td className="px-2 py-1">{time}</td>
-                            <td className="px-2 py-1 text-right">
-                              {log.configured_minutes}
-                            </td>
-                            <td className="px-2 py-1">{log.label || "-"}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-4">
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">
+                          Fecha
+                        </p>
+                        <p>{formatDateTime(latestLog.executed_at).date}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">
+                          Hora
+                        </p>
+                        <p>{formatDateTime(latestLog.executed_at).time}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">
+                          Min
+                        </p>
+                        <p>{latestLog.configured_minutes}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">
+                          Etiqueta
+                        </p>
+                        <p>{latestLog.label || "-"}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-4">
+                    <h3 className="text-sm font-semibold">Objetivos</h3>
+                    <ul className="mt-3 max-h-36 space-y-2 overflow-y-auto pr-1 text-sm text-slate-300">
+                      {objectives.map((objective) => (
+                        <li
+                          key={objective}
+                          className="rounded-md bg-slate-800 px-3 py-2"
+                        >
+                          {objective}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               )}
             </div>
@@ -714,7 +818,9 @@ export default function HomePage() {
             </button>
           </div>
 
-          {todoError ? <p className="text-sm text-red-300">{todoError}</p> : null}
+          {todoError ? (
+            <p className="text-sm text-red-300">{todoError}</p>
+          ) : null}
 
           <div className="inline-flex rounded-lg bg-slate-900 p-1">
             <button
@@ -765,7 +871,9 @@ export default function HomePage() {
                 </select>
               </div>
               {visiblePendingTodos.length === 0 ? (
-                <p className="text-sm text-slate-400">No hay tareas pendientes.</p>
+                <p className="text-sm text-slate-400">
+                  No hay tareas pendientes.
+                </p>
               ) : (
                 visiblePendingTodos.map((todo) => {
                   const isEditing = editingTodoId === todo.id;
@@ -777,13 +885,13 @@ export default function HomePage() {
                       key={todo.id}
                       draggable={!isEditing}
                       onDragStart={() => handlePendingDragStart(todo.id)}
-                      onDragOver={(event) => handlePendingDragOver(event, todo.id)}
+                      onDragOver={(event) =>
+                        handlePendingDragOver(event, todo.id)
+                      }
                       onDrop={() => handlePendingDrop(todo.id)}
                       onDragEnd={handlePendingDragEnd}
                       className={`rounded-lg border bg-slate-900/60 p-3 transition ${
-                        isDropTarget
-                          ? "border-cyan-400"
-                          : "border-slate-700"
+                        isDropTarget ? "border-cyan-400" : "border-slate-700"
                       } ${isDragged ? "opacity-60" : ""}`}
                     >
                       <div className="flex items-start gap-3">
@@ -800,7 +908,9 @@ export default function HomePage() {
                               <input
                                 type="text"
                                 value={editingTitle}
-                                onChange={(e) => setEditingTitle(e.target.value)}
+                                onChange={(e) =>
+                                  setEditingTitle(e.target.value)
+                                }
                                 className="w-full rounded-md bg-slate-700 px-3 py-2 outline-none"
                                 maxLength={120}
                               />
@@ -816,7 +926,9 @@ export default function HomePage() {
                             </>
                           ) : (
                             <>
-                              <p className="font-medium text-white">{todo.title}</p>
+                              <p className="font-medium text-white">
+                                {todo.title}
+                              </p>
                               {todo.description ? (
                                 <p className="text-sm text-slate-300">
                                   {todo.description}
@@ -846,7 +958,9 @@ export default function HomePage() {
                           <option value={4}>P4</option>
                           <option value={5}>P5</option>
                         </select>
-                        <span className="text-xs text-slate-400">Arrastra para reordenar</span>
+                        <span className="text-xs text-slate-400">
+                          Arrastra para reordenar
+                        </span>
 
                         {isEditing ? (
                           <>
@@ -889,7 +1003,9 @@ export default function HomePage() {
             <div className="space-y-3">
               <h3 className="font-semibold">Completadas</h3>
               {completedTodos.length === 0 ? (
-                <p className="text-sm text-slate-400">No hay tareas completadas.</p>
+                <p className="text-sm text-slate-400">
+                  No hay tareas completadas.
+                </p>
               ) : (
                 completedTodos.map((todo) => (
                   <div
@@ -933,6 +1049,84 @@ export default function HomePage() {
           )}
         </section>
       </div>
+
+      {thoughtsModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
+          <div className="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  Pensamientos tontos y distracciones
+                </h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Ultimos 3 pensamientos guardados.
+                </p>
+              </div>
+              <button
+                onClick={() => setThoughtsModalOpen(false)}
+                className="rounded-md bg-slate-800 px-3 py-1.5 text-sm"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium">Recientes</h3>
+                {loadingThoughts ? (
+                  <p className="text-sm text-slate-400">
+                    Cargando pensamientos...
+                  </p>
+                ) : thoughts.length === 0 ? (
+                  <p className="text-sm text-slate-400">
+                    Aun no hay pensamientos guardados.
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    {thoughts.map((thought) => (
+                      <li
+                        key={thought.id}
+                        className="rounded-lg border border-slate-700 bg-slate-800/80 p-3"
+                      >
+                        <p className="text-sm">{thought.content}</p>
+                        <p className="mt-2 text-xs text-slate-500">
+                          {formatDateTime(thought.created_at).date}{" "}
+                          {formatDateTime(thought.created_at).time}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">
+                  Agregar nuevo pensamiento
+                </label>
+                <textarea
+                  value={thoughtContent}
+                  onChange={(e) => setThoughtContent(e.target.value)}
+                  className="min-h-28 w-full rounded-lg bg-slate-800 px-3 py-2 outline-none"
+                  placeholder="Escribe lo que te distrae o se te vino a la cabeza..."
+                  maxLength={500}
+                />
+                {thoughtError ? (
+                  <p className="text-sm text-red-300">{thoughtError}</p>
+                ) : null}
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveThought}
+                    disabled={savingThought}
+                    className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium disabled:opacity-50"
+                  >
+                    Guardar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
