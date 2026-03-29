@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { useEffectEvent } from "react";
+import { TaskCard } from "@/components/TaskCard";
+import type { Subtask, Task } from "@/lib/taskTypes";
 
 type TimerLog = {
   id: number;
@@ -9,18 +11,6 @@ type TimerLog = {
   executed_at: string;
   created_at: string;
   label: string | null;
-};
-
-type TodoItem = {
-  id: number;
-  title: string;
-  description: string | null;
-  completed: boolean;
-  priority: number;
-  position: number;
-  completed_at: string | null;
-  created_at: string;
-  updated_at: string;
 };
 
 type ThoughtLog = {
@@ -44,67 +34,35 @@ function formatDateTime(iso: string) {
   return { date, time };
 }
 
-function sortTodos(items: TodoItem[]) {
-  const pending = items
-    .filter((item) => !item.completed)
-    .sort((a, b) => {
-      if (a.priority !== b.priority) return a.priority - b.priority;
-      if (a.position !== b.position) return a.position - b.position;
-      return (
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
-    });
-
-  const completed = items
-    .filter((item) => item.completed)
-    .sort(
-      (a, b) =>
-        new Date(b.completed_at ?? b.updated_at).getTime() -
-        new Date(a.completed_at ?? a.updated_at).getTime()
-    );
-
-  return { pending, completed };
-}
-
-function buildPendingReorderPayload(items: TodoItem[]) {
-  const { pending } = sortTodos(items);
-  return pending.map((item, index) => ({ id: item.id, position: index + 1 }));
-}
-
 export default function HomePage() {
   const audioContextRef = useRef<AudioContext | null>(null);
-  const [label, setLabel] = useState<string>("");
-  const [minutes, setMinutes] = useState<number>(1);
-  const [remainingSeconds, setRemainingSeconds] = useState<number>(60);
+
+  const [label, setLabel] = useState("");
+  const [minutes, setMinutes] = useState(1);
+  const [remainingSeconds, setRemainingSeconds] = useState(60);
   const [running, setRunning] = useState(false);
   const [logs, setLogs] = useState<TimerLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [targetTime, setTargetTime] = useState<number | null>(null);
 
-  const [todos, setTodos] = useState<TodoItem[]>([]);
-  const [loadingTodos, setLoadingTodos] = useState(false);
-  const [todoTitle, setTodoTitle] = useState("");
-  const [todoDescription, setTodoDescription] = useState("");
-  const [todoPriority, setTodoPriority] = useState(3);
-  const [todoError, setTodoError] = useState<string | null>(null);
-  const [submittingTodo, setSubmittingTodo] = useState(false);
-  const [editingTodoId, setEditingTodoId] = useState<number | null>(null);
-  const [editingTitle, setEditingTitle] = useState("");
-  const [editingDescription, setEditingDescription] = useState("");
-  const [activeTodoTab, setActiveTodoTab] = useState<"pending" | "completed">(
-    "pending"
-  );
-  const [pendingPriorityFilter, setPendingPriorityFilter] = useState<
-    "all" | 1 | 2 | 3 | 4 | 5
-  >(1);
-  const [draggingTodoId, setDraggingTodoId] = useState<number | null>(null);
-  const [dropTargetTodoId, setDropTargetTodoId] = useState<number | null>(null);
   const [thoughts, setThoughts] = useState<ThoughtLog[]>([]);
   const [thoughtContent, setThoughtContent] = useState("");
   const [thoughtError, setThoughtError] = useState<string | null>(null);
   const [loadingThoughts, setLoadingThoughts] = useState(false);
   const [savingThought, setSavingThought] = useState(false);
-  const [thoughtsModalOpen, setThoughtsModalOpen] = useState(false);
+
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [subtasksByTask, setSubtasksByTask] = useState<Record<string, Subtask[]>>(
+    {}
+  );
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [taskError, setTaskError] = useState<string | null>(null);
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskDescription, setNewTaskDescription] = useState("");
+  const [submittingTask, setSubmittingTask] = useState(false);
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const [dropTargetTaskId, setDropTargetTaskId] = useState<string | null>(null);
 
   const ensureAudioContext = async () => {
     if (typeof window === "undefined") return null;
@@ -189,30 +147,11 @@ export default function HomePage() {
       }
       const data = await res.json();
       setLogs(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error("Error cargando logs:", err);
+    } catch (error) {
+      console.error("Error cargando logs:", error);
       setLogs([]);
     } finally {
       setLoadingLogs(false);
-    }
-  };
-
-  const cargarTodos = async () => {
-    setLoadingTodos(true);
-    setTodoError(null);
-    try {
-      const res = await fetch("/api/todos");
-      if (!res.ok) {
-        throw new Error("No se pudieron obtener las tareas");
-      }
-      const data = await res.json();
-      setTodos(Array.isArray(data) ? (data as TodoItem[]) : []);
-    } catch (err) {
-      console.error("Error cargando TODOs:", err);
-      setTodoError("No se pudieron cargar las tareas.");
-      setTodos([]);
-    } finally {
-      setLoadingTodos(false);
     }
   };
 
@@ -226,8 +165,8 @@ export default function HomePage() {
       }
       const data = await res.json();
       setThoughts(Array.isArray(data) ? (data as ThoughtLog[]) : []);
-    } catch (err) {
-      console.error("Error cargando pensamientos:", err);
+    } catch (error) {
+      console.error("Error cargando pensamientos:", error);
       setThoughtError("No se pudieron cargar los pensamientos.");
       setThoughts([]);
     } finally {
@@ -235,15 +174,51 @@ export default function HomePage() {
     }
   };
 
-  useEffect(() => {
-    cargarLogs();
-    cargarTodos();
-  }, []);
+  const cargarTasks = async () => {
+    setLoadingTasks(true);
+    setTaskError(null);
+
+    try {
+      const tasksRes = await fetch("/api/tasks");
+      if (!tasksRes.ok) {
+        throw new Error("No se pudieron obtener las tareas");
+      }
+
+      const tasksData = await tasksRes.json();
+      const nextTasks = Array.isArray(tasksData) ? (tasksData as Task[]) : [];
+      setTasks(nextTasks);
+
+      const subtasksEntries = await Promise.all(
+        nextTasks.map(async (task) => {
+          const subtasksRes = await fetch(`/api/tasks/${task.id}/subtasks`);
+          if (!subtasksRes.ok) {
+            throw new Error("No se pudieron obtener los pasos");
+          }
+
+          const subtasksData = await subtasksRes.json();
+          return [
+            task.id,
+            Array.isArray(subtasksData) ? (subtasksData as Subtask[]) : [],
+          ] as const;
+        })
+      );
+
+      setSubtasksByTask(Object.fromEntries(subtasksEntries));
+    } catch (error) {
+      console.error("Error cargando tasks:", error);
+      setTaskError("No se pudieron cargar las tareas.");
+      setTasks([]);
+      setSubtasksByTask({});
+    } finally {
+      setLoadingTasks(false);
+    }
+  };
 
   useEffect(() => {
-    if (!thoughtsModalOpen) return;
+    void cargarLogs();
     void cargarThoughts();
-  }, [thoughtsModalOpen]);
+    void cargarTasks();
+  }, []);
 
   const handleStart = async () => {
     if (minutes <= 0) return;
@@ -273,8 +248,8 @@ export default function HomePage() {
       }
 
       await cargarLogs();
-    } catch (err) {
-      console.error("Error guardando el temporizador:", err);
+    } catch (error) {
+      console.error("Error guardando el temporizador:", error);
     }
   };
 
@@ -286,301 +261,6 @@ export default function HomePage() {
     setRunning(false);
     setTargetTime(null);
     setRemainingSeconds(minutes * 60);
-  };
-
-  const handleCreateTodo = async () => {
-    const cleanTitle = todoTitle.trim();
-    const cleanDescription = todoDescription.trim();
-
-    if (!cleanTitle) {
-      setTodoError("El título de la tarea es obligatorio.");
-      return;
-    }
-
-    setSubmittingTodo(true);
-    setTodoError(null);
-
-    try {
-      const res = await fetch("/api/todos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: cleanTitle,
-          description: cleanDescription,
-          priority: todoPriority,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || "No se pudo crear la tarea");
-      }
-
-      setTodos((prev) => [...prev, data as TodoItem]);
-      setTodoTitle("");
-      setTodoDescription("");
-      setTodoPriority(3);
-    } catch (err) {
-      console.error("Error creando TODO:", err);
-      setTodoError("No se pudo crear la tarea.");
-    } finally {
-      setSubmittingTodo(false);
-    }
-  };
-
-  const handleToggleTodo = async (todo: TodoItem) => {
-    const nextCompleted = !todo.completed;
-    const prevTodos = todos;
-    const nowIso = new Date().toISOString();
-
-    setTodoError(null);
-    setTodos((prev) =>
-      prev.map((item) =>
-        item.id === todo.id
-          ? {
-              ...item,
-              completed: nextCompleted,
-              completed_at: nextCompleted ? nowIso : null,
-            }
-          : item
-      )
-    );
-
-    try {
-      const res = await fetch(`/api/todos/${todo.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ completed: nextCompleted }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || "No se pudo actualizar la tarea");
-      }
-
-      setTodos((prev) =>
-        prev.map((item) => (item.id === todo.id ? (data as TodoItem) : item))
-      );
-    } catch (err) {
-      console.error("Error cambiando estado de TODO:", err);
-      setTodoError("No se pudo actualizar el estado de la tarea.");
-      setTodos(prevTodos);
-    }
-  };
-
-  const handlePriorityChange = async (todo: TodoItem, nextPriority: number) => {
-    if (todo.priority === nextPriority) return;
-
-    const prevTodos = todos;
-    const optimistic = todos.map((item) =>
-      item.id === todo.id ? { ...item, priority: nextPriority } : item
-    );
-    setTodos(optimistic);
-
-    const reorderItems = buildPendingReorderPayload(optimistic);
-    const normalized = optimistic.map((item) => {
-      const next = reorderItems.find((r) => r.id === item.id);
-      return next ? { ...item, position: next.position } : item;
-    });
-    setTodos(normalized);
-
-    try {
-      const patchRes = await fetch(`/api/todos/${todo.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priority: nextPriority }),
-      });
-
-      const patchData = await patchRes.json();
-      if (!patchRes.ok) {
-        throw new Error(patchData?.error || "No se pudo actualizar prioridad");
-      }
-
-      const reorderRes = await fetch("/api/todos/reorder", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: reorderItems }),
-      });
-      const reorderData = await reorderRes.json();
-      if (!reorderRes.ok) {
-        throw new Error(reorderData?.error || "No se pudo actualizar orden");
-      }
-
-      await cargarTodos();
-    } catch (err) {
-      console.error("Error actualizando prioridad:", err);
-      setTodoError("No se pudo actualizar la prioridad.");
-      setTodos(prevTodos);
-    }
-  };
-
-  const handlePendingDragStart = (todoId: number) => {
-    setDraggingTodoId(todoId);
-    setDropTargetTodoId(null);
-  };
-
-  const handlePendingDragOver = (
-    event: DragEvent<HTMLDivElement>,
-    targetTodoId: number
-  ) => {
-    if (!draggingTodoId || draggingTodoId === targetTodoId) return;
-
-    const dragged = pendingTodos.find((item) => item.id === draggingTodoId);
-    const target = pendingTodos.find((item) => item.id === targetTodoId);
-    if (!dragged || !target || dragged.priority !== target.priority) return;
-
-    event.preventDefault();
-    setDropTargetTodoId(targetTodoId);
-  };
-
-  const handlePendingDragEnd = () => {
-    setDraggingTodoId(null);
-    setDropTargetTodoId(null);
-  };
-
-  const handlePendingDrop = async (targetTodoId: number) => {
-    if (!draggingTodoId || draggingTodoId === targetTodoId) {
-      handlePendingDragEnd();
-      return;
-    }
-
-    const dragged = pendingTodos.find((item) => item.id === draggingTodoId);
-    const target = pendingTodos.find((item) => item.id === targetTodoId);
-    if (!dragged || !target || dragged.priority !== target.priority) {
-      handlePendingDragEnd();
-      return;
-    }
-
-    const samePriority = pendingTodos.filter(
-      (item) => item.priority === dragged.priority
-    );
-    const draggedIndex = samePriority.findIndex(
-      (item) => item.id === draggingTodoId
-    );
-    const targetIndex = samePriority.findIndex(
-      (item) => item.id === targetTodoId
-    );
-
-    if (
-      draggedIndex === -1 ||
-      targetIndex === -1 ||
-      draggedIndex === targetIndex
-    ) {
-      handlePendingDragEnd();
-      return;
-    }
-
-    const reorderedPriority = [...samePriority];
-    const [moved] = reorderedPriority.splice(draggedIndex, 1);
-    reorderedPriority.splice(targetIndex, 0, moved);
-
-    let cursor = 0;
-    const reorderedPending = pendingTodos.map((item) =>
-      item.priority === dragged.priority ? reorderedPriority[cursor++] : item
-    );
-    const reorderItems = reorderedPending.map((item, index) => ({
-      id: item.id,
-      position: index + 1,
-    }));
-
-    const prevTodos = todos;
-    const reorderMap = new Map(
-      reorderItems.map((item) => [item.id, item.position])
-    );
-    const optimisticTodos = todos.map((item) =>
-      reorderMap.has(item.id)
-        ? { ...item, position: reorderMap.get(item.id) ?? item.position }
-        : item
-    );
-
-    setTodoError(null);
-    setTodos(optimisticTodos);
-    handlePendingDragEnd();
-
-    try {
-      const res = await fetch("/api/todos/reorder", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: reorderItems }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || "No se pudo reordenar");
-      }
-    } catch (err) {
-      console.error("Error reordenando TODOs con drag and drop:", err);
-      setTodoError("No se pudo guardar el nuevo orden.");
-      setTodos(prevTodos);
-    }
-  };
-
-  const startEditingTodo = (todo: TodoItem) => {
-    setEditingTodoId(todo.id);
-    setEditingTitle(todo.title);
-    setEditingDescription(todo.description ?? "");
-    setTodoError(null);
-  };
-
-  const cancelEditingTodo = () => {
-    setEditingTodoId(null);
-    setEditingTitle("");
-    setEditingDescription("");
-  };
-
-  const handleSaveTodo = async (id: number) => {
-    const cleanTitle = editingTitle.trim();
-    const cleanDescription = editingDescription.trim();
-
-    if (!cleanTitle) {
-      setTodoError("El título no puede estar vacío.");
-      return;
-    }
-
-    setTodoError(null);
-    try {
-      const res = await fetch(`/api/todos/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: cleanTitle,
-          description: cleanDescription,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || "No se pudo actualizar la tarea");
-      }
-
-      setTodos((prev) =>
-        prev.map((item) => (item.id === id ? (data as TodoItem) : item))
-      );
-      cancelEditingTodo();
-    } catch (err) {
-      console.error("Error actualizando TODO:", err);
-      setTodoError("No se pudo actualizar la tarea.");
-    }
-  };
-
-  const handleDeleteTodo = async (id: number) => {
-    const prevTodos = todos;
-    setTodoError(null);
-    setTodos((prev) => prev.filter((item) => item.id !== id));
-
-    try {
-      const res = await fetch(`/api/todos/${id}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || "No se pudo eliminar la tarea");
-      }
-      if (editingTodoId === id) {
-        cancelEditingTodo();
-      }
-    } catch (err) {
-      console.error("Error eliminando TODO:", err);
-      setTodoError("No se pudo eliminar la tarea.");
-      setTodos(prevTodos);
-    }
   };
 
   const handleSaveThought = async () => {
@@ -608,44 +288,219 @@ export default function HomePage() {
 
       setThoughtContent("");
       await cargarThoughts();
-    } catch (err) {
-      console.error("Error guardando pensamiento:", err);
+    } catch (error) {
+      console.error("Error guardando pensamiento:", error);
       setThoughtError("No se pudo guardar el pensamiento.");
     } finally {
       setSavingThought(false);
     }
   };
 
-  const { pending: pendingTodos, completed: completedTodos } = sortTodos(todos);
-  const visiblePendingTodos =
-    pendingPriorityFilter === "all"
-      ? pendingTodos
-      : pendingTodos.filter((item) => item.priority === pendingPriorityFilter);
+  const handleCreateTask = async () => {
+    const cleanTitle = newTaskTitle.trim();
+    const cleanDescription = newTaskDescription.trim();
+
+    if (!cleanTitle) {
+      setTaskError("El titulo de la tarea grande es obligatorio.");
+      return;
+    }
+
+    setSubmittingTask(true);
+    setTaskError(null);
+
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: cleanTitle,
+          description: cleanDescription,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "No se pudo crear la tarea");
+      }
+
+      setNewTaskTitle("");
+      setNewTaskDescription("");
+      setIsCreatingTask(false);
+      await cargarTasks();
+    } catch (error) {
+      console.error("Error creando task:", error);
+      setTaskError("No se pudo crear la tarea.");
+    } finally {
+      setSubmittingTask(false);
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    setTaskError(null);
+
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "No se pudo eliminar la tarea");
+      }
+
+      await cargarTasks();
+    } catch (error) {
+      console.error("Error eliminando task:", error);
+      setTaskError("No se pudo eliminar la tarea.");
+    }
+  };
+
+  const handleTaskDragStart = (taskId: string) => {
+    setDraggingTaskId(taskId);
+    setDropTargetTaskId(null);
+  };
+
+  const handleTaskDragOver = (
+    event: DragEvent<HTMLDivElement>,
+    targetTaskId: string
+  ) => {
+    if (!draggingTaskId || draggingTaskId === targetTaskId) return;
+    event.preventDefault();
+    setDropTargetTaskId(targetTaskId);
+  };
+
+  const handleTaskDragEnd = () => {
+    setDraggingTaskId(null);
+    setDropTargetTaskId(null);
+  };
+
+  const handleTaskDrop = async (targetTaskId: string) => {
+    if (!draggingTaskId || draggingTaskId === targetTaskId) {
+      handleTaskDragEnd();
+      return;
+    }
+
+    const draggedIndex = tasks.findIndex((task) => task.id === draggingTaskId);
+    const targetIndex = tasks.findIndex((task) => task.id === targetTaskId);
+
+    if (draggedIndex === -1 || targetIndex === -1) {
+      handleTaskDragEnd();
+      return;
+    }
+
+    const reordered = [...tasks];
+    const [moved] = reordered.splice(draggedIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
+
+    const normalized = reordered.map((task, index) => ({
+      ...task,
+      position: index + 1,
+    }));
+    const reorderItems = normalized.map((task) => ({
+      id: task.id,
+      position: task.position,
+    }));
+
+    const prevTasks = tasks;
+    setTaskError(null);
+    setTasks(normalized);
+    handleTaskDragEnd();
+
+    try {
+      const res = await fetch("/api/tasks/reorder", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: reorderItems }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "No se pudo reordenar");
+      }
+    } catch (error) {
+      console.error("Error reordenando tasks:", error);
+      setTaskError("No se pudo guardar el nuevo orden de las tareas.");
+      setTasks(prevTasks);
+    }
+  };
+
   const latestLog = logs[0] ?? null;
-  const objectives = [
-    "comprar iphone",
-    "terminar app medicina",
-    "terminar plataforma de ordenamiento de documentos",
-    "crear bot que me ayude con decisiones",
-  ];
 
   return (
     <main className="min-h-screen bg-slate-900 text-white">
-      <div className="mx-auto w-full max-w-5xl p-4 md:p-6 space-y-6">
-        <div className="p-6 rounded-xl bg-slate-800 shadow-lg space-y-6">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <h1 className="text-2xl font-bold text-center md:text-left">
-              Temporizador con registro en Supabase
-            </h1>
-            <button
-              onClick={() => setThoughtsModalOpen(true)}
-              className="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-600"
-            >
-              Pensamientos tontos y distracciones
-            </button>
-          </div>
+      <div className="mx-auto w-full max-w-5xl space-y-6 p-4 md:p-6">
+        <section className="rounded-xl bg-slate-800 p-6 shadow-lg">
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-xl font-bold">
+                Pensamientos tontos y distracciones
+              </h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Anota rapido lo que te distrae y manten a la vista solo los 3 mas
+                recientes.
+              </p>
+            </div>
 
-          <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium">Recientes</h3>
+                {loadingThoughts ? (
+                  <p className="text-sm text-slate-400">
+                    Cargando pensamientos...
+                  </p>
+                ) : thoughts.length === 0 ? (
+                  <p className="text-sm text-slate-400">
+                    Aun no hay pensamientos guardados.
+                  </p>
+                ) : (
+                  <ul className="max-h-80 space-y-2 overflow-y-auto pr-2">
+                    {thoughts.map((thought) => (
+                      <li
+                        key={thought.id}
+                        className="rounded-lg border border-slate-700 bg-slate-900/60 p-3"
+                      >
+                        <p className="text-sm">{thought.content}</p>
+                        <p className="mt-2 text-xs text-slate-500">
+                          {formatDateTime(thought.created_at).date}{" "}
+                          {formatDateTime(thought.created_at).time}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">
+                  Agregar nuevo pensamiento
+                </label>
+                <textarea
+                  value={thoughtContent}
+                  onChange={(e) => setThoughtContent(e.target.value)}
+                  className="min-h-32 w-full resize-none rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-slate-600"
+                  placeholder="Escribe lo que te distrae o lo que no quieres olvidar..."
+                  maxLength={500}
+                />
+                {thoughtError ? (
+                  <p className="text-sm text-red-300">{thoughtError}</p>
+                ) : null}
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => void handleSaveThought()}
+                    disabled={savingThought}
+                    className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    Guardar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="space-y-6 rounded-xl bg-slate-800 p-6 shadow-lg">
+          <h1 className="text-2xl font-bold text-center md:text-left">
+            Temporizador con registro en Supabase
+          </h1>
+
+          <div className="grid gap-6 md:grid-cols-2">
             <div className="space-y-4">
               <label className="block text-sm">
                 Minutos:
@@ -670,45 +525,46 @@ export default function HomePage() {
                   maxLength={80}
                 />
               </label>
-              <div className="text-center text-5xl font-mono">
+
+              <div className="text-center font-mono text-5xl">
                 {formatTime(remainingSeconds)}
               </div>
 
-              <div className="flex gap-2 justify-center">
+              <div className="flex justify-center gap-2">
                 <button
-                  onClick={handleStart}
+                  onClick={() => void handleStart()}
                   disabled={running}
-                  className="px-4 py-2 rounded bg-green-600 disabled:opacity-50"
+                  className="rounded bg-green-600 px-4 py-2 disabled:opacity-50"
                 >
                   Iniciar
                 </button>
                 <button
                   onClick={handleStop}
                   disabled={!running}
-                  className="px-4 py-2 rounded bg-yellow-500 disabled:opacity-50"
+                  className="rounded bg-yellow-500 px-4 py-2 disabled:opacity-50"
                 >
                   Pausar
                 </button>
                 <button
                   onClick={handleReset}
-                  className="px-4 py-2 rounded bg-red-600"
+                  className="rounded bg-red-600 px-4 py-2"
                 >
                   Reset
                 </button>
               </div>
 
-              <p className="text-xs text-center text-slate-400">
+              <p className="text-center text-xs text-slate-400">
                 Cada vez que presionas <b>Iniciar</b>, se guarda en Supabase: el
-                día, los minutos configurados y la hora de ejecución.
+                dia, los minutos configurados y la hora de ejecucion.
               </p>
             </div>
 
             <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <h2 className="font-semibold">Último registro</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold">Ultimo registro</h2>
                 <button
-                  onClick={cargarLogs}
-                  className="text-xs px-2 py-1 rounded bg-slate-700"
+                  onClick={() => void cargarLogs()}
+                  className="rounded bg-slate-700 px-2 py-1 text-xs"
                 >
                   Actualizar
                 </button>
@@ -718,415 +574,149 @@ export default function HomePage() {
                 <p className="text-sm text-slate-400">Cargando registros...</p>
               ) : !latestLog ? (
                 <p className="text-sm text-slate-400">
-                  Aún no hay registros de temporizadores.
+                  Aun no hay registros de temporizadores.
                 </p>
               ) : (
-                <div className="space-y-4">
-                  <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-4">
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-slate-500">
-                          Fecha
-                        </p>
-                        <p>{formatDateTime(latestLog.executed_at).date}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-slate-500">
-                          Hora
-                        </p>
-                        <p>{formatDateTime(latestLog.executed_at).time}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-slate-500">
-                          Min
-                        </p>
-                        <p>{latestLog.configured_minutes}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-slate-500">
-                          Etiqueta
-                        </p>
-                        <p>{latestLog.label || "-"}</p>
-                      </div>
+                <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-4">
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-slate-500">
+                        Fecha
+                      </p>
+                      <p>{formatDateTime(latestLog.executed_at).date}</p>
                     </div>
-                  </div>
-
-                  <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-4">
-                    <h3 className="text-sm font-semibold">Objetivos</h3>
-                    <ul className="mt-3 max-h-36 space-y-2 overflow-y-auto pr-1 text-sm text-slate-300">
-                      {objectives.map((objective) => (
-                        <li
-                          key={objective}
-                          className="rounded-md bg-slate-800 px-3 py-2"
-                        >
-                          {objective}
-                        </li>
-                      ))}
-                    </ul>
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-slate-500">
+                        Hora
+                      </p>
+                      <p>{formatDateTime(latestLog.executed_at).time}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-slate-500">
+                        Min
+                      </p>
+                      <p>{latestLog.configured_minutes}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-slate-500">
+                        Etiqueta
+                      </p>
+                      <p>{latestLog.label || "-"}</p>
+                    </div>
                   </div>
                 </div>
               )}
             </div>
           </div>
-        </div>
+        </section>
 
-        <section className="p-6 rounded-xl bg-slate-800 shadow-lg space-y-5">
+        <section className="space-y-5 rounded-xl bg-slate-800 p-6 shadow-lg">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold">Todo List</h2>
+            <div>
+              <h2 className="text-xl font-bold">Mis Tareas</h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Organiza tus objetivos grandes en pasos pequenos con progreso
+                ponderado por peso.
+              </p>
+            </div>
             <button
-              onClick={cargarTodos}
-              className="text-xs px-2 py-1 rounded bg-slate-700"
+              onClick={() => void cargarTasks()}
+              className="rounded bg-slate-700 px-2 py-1 text-xs"
             >
               Actualizar
             </button>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto_auto]">
-            <input
-              type="text"
-              value={todoTitle}
-              onChange={(e) => setTodoTitle(e.target.value)}
-              placeholder="Título de la tarea"
-              className="rounded-md bg-slate-700 px-3 py-2 outline-none"
-              maxLength={120}
-            />
-            <input
-              type="text"
-              value={todoDescription}
-              onChange={(e) => setTodoDescription(e.target.value)}
-              placeholder="Descripción (opcional)"
-              className="rounded-md bg-slate-700 px-3 py-2 outline-none"
-              maxLength={500}
-            />
-            <select
-              value={todoPriority}
-              onChange={(e) => setTodoPriority(Number(e.target.value))}
-              className="rounded-md bg-slate-700 px-3 py-2 outline-none"
-            >
-              <option value={1}>Prioridad 1</option>
-              <option value={2}>Prioridad 2</option>
-              <option value={3}>Prioridad 3</option>
-              <option value={4}>Prioridad 4</option>
-              <option value={5}>Prioridad 5</option>
-            </select>
-            <button
-              onClick={handleCreateTodo}
-              disabled={submittingTodo}
-              className="px-4 py-2 rounded bg-blue-600 disabled:opacity-50"
-            >
-              Crear
-            </button>
-          </div>
+          {taskError ? <p className="text-sm text-red-300">{taskError}</p> : null}
 
-          {todoError ? (
-            <p className="text-sm text-red-300">{todoError}</p>
-          ) : null}
-
-          <div className="inline-flex rounded-lg bg-slate-900 p-1">
-            <button
-              onClick={() => setActiveTodoTab("pending")}
-              className={`px-3 py-1.5 text-sm rounded-md ${
-                activeTodoTab === "pending"
-                  ? "bg-slate-700 text-white"
-                  : "text-slate-300"
-              }`}
-            >
-              Pendientes
-            </button>
-            <button
-              onClick={() => setActiveTodoTab("completed")}
-              className={`px-3 py-1.5 text-sm rounded-md ${
-                activeTodoTab === "completed"
-                  ? "bg-slate-700 text-white"
-                  : "text-slate-300"
-              }`}
-            >
-              Completadas
-            </button>
-          </div>
-
-          {loadingTodos ? (
+          {loadingTasks ? (
             <p className="text-sm text-slate-400">Cargando tareas...</p>
-          ) : activeTodoTab === "pending" ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="font-semibold">Pendientes</h3>
-                <select
-                  value={pendingPriorityFilter}
-                  onChange={(e) =>
-                    setPendingPriorityFilter(
-                      e.target.value === "all"
-                        ? "all"
-                        : (Number(e.target.value) as 1 | 2 | 3 | 4 | 5)
-                    )
-                  }
-                  className="rounded bg-slate-700 px-2 py-1 text-sm"
-                >
-                  <option value={1}>Solo P1</option>
-                  <option value={2}>Solo P2</option>
-                  <option value={3}>Solo P3</option>
-                  <option value={4}>Solo P4</option>
-                  <option value={5}>Solo P5</option>
-                  <option value="all">Todas</option>
-                </select>
-              </div>
-              {visiblePendingTodos.length === 0 ? (
-                <p className="text-sm text-slate-400">
-                  No hay tareas pendientes.
-                </p>
-              ) : (
-                visiblePendingTodos.map((todo) => {
-                  const isEditing = editingTodoId === todo.id;
-                  const isDragged = draggingTodoId === todo.id;
-                  const isDropTarget = dropTargetTodoId === todo.id;
-
-                  return (
-                    <div
-                      key={todo.id}
-                      draggable={!isEditing}
-                      onDragStart={() => handlePendingDragStart(todo.id)}
-                      onDragOver={(event) =>
-                        handlePendingDragOver(event, todo.id)
-                      }
-                      onDrop={() => handlePendingDrop(todo.id)}
-                      onDragEnd={handlePendingDragEnd}
-                      className={`rounded-lg border bg-slate-900/60 p-3 transition ${
-                        isDropTarget ? "border-cyan-400" : "border-slate-700"
-                      } ${isDragged ? "opacity-60" : ""}`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <input
-                          type="checkbox"
-                          checked={todo.completed}
-                          onChange={() => handleToggleTodo(todo)}
-                          className="mt-1 h-4 w-4"
-                        />
-
-                        <div className="flex-1 space-y-2">
-                          {isEditing ? (
-                            <>
-                              <input
-                                type="text"
-                                value={editingTitle}
-                                onChange={(e) =>
-                                  setEditingTitle(e.target.value)
-                                }
-                                className="w-full rounded-md bg-slate-700 px-3 py-2 outline-none"
-                                maxLength={120}
-                              />
-                              <textarea
-                                value={editingDescription}
-                                onChange={(e) =>
-                                  setEditingDescription(e.target.value)
-                                }
-                                className="w-full rounded-md bg-slate-700 px-3 py-2 outline-none"
-                                rows={2}
-                                maxLength={500}
-                              />
-                            </>
-                          ) : (
-                            <>
-                              <p className="font-medium text-white">
-                                {todo.title}
-                              </p>
-                              {todo.description ? (
-                                <p className="text-sm text-slate-300">
-                                  {todo.description}
-                                </p>
-                              ) : null}
-                              <p className="text-xs text-slate-500">
-                                Creada: {formatDateTime(todo.created_at).date}{" "}
-                                {formatDateTime(todo.created_at).time}
-                              </p>
-                            </>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
-                        <select
-                          value={todo.priority}
-                          onChange={(e) =>
-                            handlePriorityChange(todo, Number(e.target.value))
-                          }
-                          className="rounded bg-slate-700 px-2 py-1 text-sm"
-                          disabled={isEditing}
-                        >
-                          <option value={1}>P1</option>
-                          <option value={2}>P2</option>
-                          <option value={3}>P3</option>
-                          <option value={4}>P4</option>
-                          <option value={5}>P5</option>
-                        </select>
-                        <span className="text-xs text-slate-400">
-                          Arrastra para reordenar
-                        </span>
-
-                        {isEditing ? (
-                          <>
-                            <button
-                              onClick={() => handleSaveTodo(todo.id)}
-                              className="px-3 py-1 rounded bg-green-600 text-sm"
-                            >
-                              Guardar
-                            </button>
-                            <button
-                              onClick={cancelEditingTodo}
-                              className="px-3 py-1 rounded bg-slate-600 text-sm"
-                            >
-                              Cancelar
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => startEditingTodo(todo)}
-                              className="px-3 py-1 rounded bg-yellow-600 text-sm"
-                            >
-                              Editar
-                            </button>
-                            <button
-                              onClick={() => handleDeleteTodo(todo.id)}
-                              className="px-3 py-1 rounded bg-red-600 text-sm"
-                            >
-                              Borrar
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+          ) : tasks.length === 0 ? (
+            <p className="text-sm text-slate-400">
+              Aun no hay tareas grandes creadas.
+            </p>
           ) : (
-            <div className="space-y-3">
-              <h3 className="font-semibold">Completadas</h3>
-              {completedTodos.length === 0 ? (
-                <p className="text-sm text-slate-400">
-                  No hay tareas completadas.
-                </p>
-              ) : (
-                completedTodos.map((todo) => (
-                  <div
-                    key={todo.id}
-                    className="rounded-lg border border-slate-700 bg-slate-900/60 p-3"
-                  >
-                    <div className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={todo.completed}
-                        onChange={() => handleToggleTodo(todo)}
-                        className="mt-1 h-4 w-4"
-                      />
-                      <div className="flex-1 space-y-1">
-                        <p className="font-medium line-through text-slate-400">
-                          {todo.title}
-                        </p>
-                        {todo.description ? (
-                          <p className="text-sm text-slate-400">
-                            {todo.description}
-                          </p>
-                        ) : null}
-                        {todo.completed_at ? (
-                          <p className="text-xs text-slate-500">
-                            Completada: {formatDateTime(todo.completed_at).date}{" "}
-                            {formatDateTime(todo.completed_at).time}
-                          </p>
-                        ) : null}
-                      </div>
-                      <button
-                        onClick={() => handleDeleteTodo(todo.id)}
-                        className="px-3 py-1 rounded bg-red-600 text-sm"
-                      >
-                        Borrar
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
+            <div className="space-y-4">
+              {tasks.map((task) => (
+                <div
+                  key={task.id}
+                  draggable
+                  onDragStart={() => handleTaskDragStart(task.id)}
+                  onDragOver={(event) => handleTaskDragOver(event, task.id)}
+                  onDrop={() => void handleTaskDrop(task.id)}
+                  onDragEnd={handleTaskDragEnd}
+                  className={`transition ${
+                    dropTargetTaskId === task.id
+                      ? "rounded-xl ring-2 ring-cyan-400"
+                      : ""
+                  } ${draggingTaskId === task.id ? "opacity-60" : ""}`}
+                >
+                  <TaskCard
+                    task={task}
+                    subtasks={subtasksByTask[task.id] ?? []}
+                    onRefresh={cargarTasks}
+                    onDelete={handleDeleteTask}
+                  />
+                </div>
+              ))}
             </div>
           )}
+
+          {isCreatingTask ? (
+            <div className="space-y-3 rounded-xl border border-slate-700 bg-slate-900/70 p-5">
+              <input
+                type="text"
+                value={newTaskTitle}
+                onChange={(e) => setNewTaskTitle(e.target.value)}
+                placeholder="Titulo de la tarea grande..."
+                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 outline-none"
+                maxLength={160}
+                autoFocus
+              />
+              <textarea
+                value={newTaskDescription}
+                onChange={(e) => setNewTaskDescription(e.target.value)}
+                placeholder="Descripcion opcional..."
+                className="w-full resize-none rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 outline-none"
+                rows={3}
+                maxLength={500}
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => {
+                    setIsCreatingTask(false);
+                    setNewTaskTitle("");
+                    setNewTaskDescription("");
+                    setTaskError(null);
+                  }}
+                  className="px-4 py-2 text-slate-400 hover:text-slate-200"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => void handleCreateTask()}
+                  disabled={submittingTask}
+                  className="rounded-lg bg-cyan-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+                >
+                  Crear tarea
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setIsCreatingTask(true)}
+              className="w-full rounded-xl border-2 border-dashed border-slate-700 p-5 text-lg font-medium text-slate-400 transition-colors hover:border-cyan-500 hover:bg-slate-900/60 hover:text-cyan-300"
+            >
+              Nueva tarea grande
+            </button>
+          )}
+          {tasks.length > 1 ? (
+            <p className="text-xs text-slate-500">
+              Arrastra las tareas grandes para reordenarlas.
+            </p>
+          ) : null}
         </section>
       </div>
-
-      {thoughtsModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
-          <div className="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold">
-                  Pensamientos tontos y distracciones
-                </h2>
-                <p className="mt-1 text-sm text-slate-400">
-                  Ultimos 3 pensamientos guardados.
-                </p>
-              </div>
-              <button
-                onClick={() => setThoughtsModalOpen(false)}
-                className="rounded-md bg-slate-800 px-3 py-1.5 text-sm"
-              >
-                Cerrar
-              </button>
-            </div>
-
-            <div className="mt-5 space-y-4">
-              <div className="space-y-2">
-                <h3 className="text-sm font-medium">Recientes</h3>
-                {loadingThoughts ? (
-                  <p className="text-sm text-slate-400">
-                    Cargando pensamientos...
-                  </p>
-                ) : thoughts.length === 0 ? (
-                  <p className="text-sm text-slate-400">
-                    Aun no hay pensamientos guardados.
-                  </p>
-                ) : (
-                  <ul className="space-y-2">
-                    {thoughts.map((thought) => (
-                      <li
-                        key={thought.id}
-                        className="rounded-lg border border-slate-700 bg-slate-800/80 p-3"
-                      >
-                        <p className="text-sm">{thought.content}</p>
-                        <p className="mt-2 text-xs text-slate-500">
-                          {formatDateTime(thought.created_at).date}{" "}
-                          {formatDateTime(thought.created_at).time}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium">
-                  Agregar nuevo pensamiento
-                </label>
-                <textarea
-                  value={thoughtContent}
-                  onChange={(e) => setThoughtContent(e.target.value)}
-                  className="min-h-28 w-full rounded-lg bg-slate-800 px-3 py-2 outline-none"
-                  placeholder="Escribe lo que te distrae o se te vino a la cabeza..."
-                  maxLength={500}
-                />
-                {thoughtError ? (
-                  <p className="text-sm text-red-300">{thoughtError}</p>
-                ) : null}
-                <div className="flex justify-end">
-                  <button
-                    onClick={handleSaveThought}
-                    disabled={savingThought}
-                    className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium disabled:opacity-50"
-                  >
-                    Guardar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </main>
   );
 }
