@@ -91,7 +91,11 @@ export default function HomePage() {
   const [pomodoroRunning, setPomodoroRunning] = useState(false);
   const [pomodoroRemainingSeconds, setPomodoroRemainingSeconds] = useState(25 * 60);
   const [pomodoroTargetTime, setPomodoroTargetTime] = useState<number | null>(null);
-  const [completedPomodoros, setCompletedPomodoros] = useState(0);
+  const [completedPomodorosToday, setCompletedPomodorosToday] = useState(0);
+  const [loadingPomodoroSummary, setLoadingPomodoroSummary] = useState(false);
+  const [pomodoroSummaryError, setPomodoroSummaryError] = useState<string | null>(
+    null
+  );
   const [currentPomodoroSessionId, setCurrentPomodoroSessionId] = useState<
     number | null
   >(null);
@@ -243,7 +247,6 @@ export default function HomePage() {
         void completePomodoroSession();
 
         if (pomodoroPhase === "focus") {
-          setCompletedPomodoros((value) => value + 1);
           setPomodoroPhase("break");
           setPomodoroRemainingSeconds(pomodoroBreakMinutes * 60);
           return;
@@ -320,6 +323,34 @@ export default function HomePage() {
     }
   };
 
+  const cargarPomodoroSummary = async () => {
+    setLoadingPomodoroSummary(true);
+    setPomodoroSummaryError(null);
+
+    try {
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Lima";
+      const res = await fetch(
+        `/api/pomodoro/today?tz=${encodeURIComponent(timeZone)}`
+      );
+      if (!res.ok) {
+        throw new Error("No se pudo obtener el resumen de pomodoro");
+      }
+
+      const data = await res.json();
+      setCompletedPomodorosToday(
+        typeof data?.completedFocusSessions === "number"
+          ? data.completedFocusSessions
+          : 0
+      );
+    } catch (error) {
+      console.error("Error cargando resumen pomodoro:", error);
+      setPomodoroSummaryError("No se pudo cargar el conteo diario de pomodoros.");
+      setCompletedPomodorosToday(0);
+    } finally {
+      setLoadingPomodoroSummary(false);
+    }
+  };
+
   const cargarNotes = async () => {
     setLoadingNotes(true);
     setNoteError(null);
@@ -387,6 +418,7 @@ export default function HomePage() {
     void cargarLogs();
     void cargarThoughts();
     void cargarStopwatchLogs();
+    void cargarPomodoroSummary();
     void cargarNotes();
     void cargarTasks();
   }, []);
@@ -498,11 +530,15 @@ export default function HomePage() {
     if (!currentPomodoroSessionId) return;
 
     try {
-      await fetch(`/api/pomodoro/${currentPomodoroSessionId}`, {
+      const response = await fetch(`/api/pomodoro/${currentPomodoroSessionId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ completedAt: new Date().toISOString() }),
       });
+      if (!response.ok) {
+        throw new Error("No se pudo completar la sesion pomodoro");
+      }
+      await cargarPomodoroSummary();
     } catch (error) {
       console.error("Error completando sesión pomodoro:", error);
     } finally {
@@ -528,7 +564,10 @@ export default function HomePage() {
             phase: pomodoroPhase,
             durationMinutes: phaseMinutes,
             startedAt,
-            cycleNumber: completedPomodoros + 1,
+            cycleNumber:
+              pomodoroPhase === "focus"
+                ? completedPomodorosToday + 1
+                : Math.max(1, completedPomodorosToday),
           }),
         });
 
@@ -561,7 +600,6 @@ export default function HomePage() {
     setPomodoroTargetTime(null);
     setPomodoroPhase("focus");
     setPomodoroRemainingSeconds(pomodoroWorkMinutes * 60);
-    setCompletedPomodoros(0);
     setCurrentPomodoroSessionId(null);
   };
 
@@ -1381,9 +1419,11 @@ export default function HomePage() {
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-500">
-                    Pomodoros completados
+                    Pomodoros completados hoy
                   </p>
-                  <p>{completedPomodoros}</p>
+                  <p>
+                    {loadingPomodoroSummary ? "..." : completedPomodorosToday}
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-500">
@@ -1402,6 +1442,14 @@ export default function HomePage() {
                 Cuando termina una fase, suena la alarma y el sistema cambia a la
                 siguiente automaticamente.
               </p>
+              {pomodoroSummaryError ? (
+                <p className="text-xs text-red-300">{pomodoroSummaryError}</p>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  El total de hoy sale de Supabase, asi que se conserva al recargar o
+                  entrar desde otro equipo.
+                </p>
+              )}
             </div>
           </div>
         </section>
