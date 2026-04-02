@@ -4,8 +4,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 export async function GET() {
   const { data, error } = await supabaseAdmin
     .from("tasks")
-    .select("*")
-    .order("position", { ascending: true });
+    .select("*");
 
   if (error) {
     console.error("Error leyendo tasks:", error);
@@ -15,20 +14,36 @@ export async function GET() {
     );
   }
 
-  return NextResponse.json(data ?? []);
+  const rows = data ?? [];
+  rows.sort((a, b) => {
+    const aDue = a.due_date
+      ? new Date(`${a.due_date}T00:00:00`).getTime()
+      : Number.POSITIVE_INFINITY;
+    const bDue = b.due_date
+      ? new Date(`${b.due_date}T00:00:00`).getTime()
+      : Number.POSITIVE_INFINITY;
+
+    if (aDue !== bDue) return aDue - bDue;
+    return a.position - b.position;
+  });
+
+  return NextResponse.json(rows);
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { title, description } = body as {
+    const { title, description, due_date } = body as {
       title?: string;
       description?: string;
+      due_date?: string | null;
     };
 
     const cleanTitle = typeof title === "string" ? title.trim() : "";
     const cleanDescription =
       typeof description === "string" ? description.trim() : "";
+    const cleanDueDate =
+      typeof due_date === "string" && due_date.trim() ? due_date.trim() : null;
 
     if (!cleanTitle) {
       return NextResponse.json(
@@ -47,6 +62,13 @@ export async function POST(req: NextRequest) {
     if (cleanDescription.length > 500) {
       return NextResponse.json(
         { error: "description no debe superar 500 caracteres" },
+        { status: 400 }
+      );
+    }
+
+    if (cleanDueDate && Number.isNaN(Date.parse(`${cleanDueDate}T00:00:00`))) {
+      return NextResponse.json(
+        { error: "due_date debe ser una fecha válida" },
         { status: 400 }
       );
     }
@@ -72,6 +94,7 @@ export async function POST(req: NextRequest) {
         title: cleanTitle,
         description: cleanDescription || null,
         position: (maxRow?.position ?? 0) + 1,
+        due_date: cleanDueDate,
       })
       .select()
       .single();

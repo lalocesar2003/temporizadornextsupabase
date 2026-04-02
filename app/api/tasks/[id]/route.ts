@@ -51,6 +51,22 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       updates.description = cleanDescription || null;
     }
 
+    if ("due_date" in body) {
+      const cleanDueDate =
+        typeof body.due_date === "string" && body.due_date.trim()
+          ? body.due_date.trim()
+          : null;
+
+      if (cleanDueDate && Number.isNaN(Date.parse(`${cleanDueDate}T00:00:00`))) {
+        return NextResponse.json(
+          { error: "due_date debe ser una fecha válida" },
+          { status: 400 }
+        );
+      }
+
+      updates.due_date = cleanDueDate;
+    }
+
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(
         { error: "No hay campos válidos para actualizar" },

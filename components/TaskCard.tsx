@@ -24,15 +24,44 @@ export function TaskCard({
   const [editingDescription, setEditingDescription] = useState(
     task.description ?? ""
   );
+  const [editingDueDate, setEditingDueDate] = useState(task.due_date ?? "");
   const [taskError, setTaskError] = useState<string | null>(null);
   const [savingTask, setSavingTask] = useState(false);
   const progress = calculateTaskProgress(subtasks);
   const completedCount = subtasks.filter((subtask) => subtask.completed).length;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dueDateValue = task.due_date
+    ? new Date(`${task.due_date}T00:00:00`).getTime()
+    : null;
+  const remainingMs = dueDateValue !== null ? dueDateValue - Date.now() : null;
+  const isOverdue = dueDateValue !== null && dueDateValue < today.getTime();
+  const isDueSoon =
+    dueDateValue !== null &&
+    dueDateValue >= today.getTime() &&
+    dueDateValue <= today.getTime() + 3 * 24 * 60 * 60 * 1000;
+  const remainingLabel =
+    remainingMs === null
+      ? null
+      : remainingMs <= 0
+        ? "fecha vencida"
+        : (() => {
+            const totalHours = Math.floor(remainingMs / (1000 * 60 * 60));
+            const days = Math.floor(totalHours / 24);
+            const hours = totalHours % 24;
+
+            if (days <= 0) {
+              return `${hours} h restantes`;
+            }
+
+            return `${days} d ${hours} h restantes`;
+          })();
 
   const handleCancelEdit = () => {
     setIsEditing(false);
     setEditingTitle(task.title);
     setEditingDescription(task.description ?? "");
+    setEditingDueDate(task.due_date ?? "");
     setTaskError(null);
   };
 
@@ -55,6 +84,7 @@ export function TaskCard({
         body: JSON.stringify({
           title: cleanTitle,
           description: cleanDescription,
+          due_date: editingDueDate || null,
         }),
       });
 
@@ -94,6 +124,12 @@ export function TaskCard({
                 maxLength={500}
                 placeholder="Descripcion opcional..."
               />
+              <input
+                type="date"
+                value={editingDueDate}
+                onChange={(event) => setEditingDueDate(event.target.value)}
+                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-300 outline-none"
+              />
               {taskError ? (
                 <p className="text-sm text-red-300">{taskError}</p>
               ) : null}
@@ -110,10 +146,35 @@ export function TaskCard({
                 <span className="rounded bg-cyan-950 px-2 py-1 text-sm font-medium text-cyan-300">
                   {Math.round(progress)}%
                 </span>
+                <span
+                  className={`rounded px-2 py-1 text-xs font-medium ${
+                    task.due_date
+                      ? isOverdue
+                        ? "bg-red-950 text-red-300"
+                        : isDueSoon
+                          ? "bg-amber-950 text-amber-300"
+                          : "bg-slate-800 text-slate-300"
+                      : "bg-slate-800 text-slate-500"
+                  }`}
+                >
+                  {task.due_date
+                    ? `vence ${task.due_date}`
+                    : "sin fecha limite"}
+                </span>
               </div>
 
               {task.description ? (
                 <p className="mb-3 text-sm text-slate-400">{task.description}</p>
+              ) : null}
+
+              {remainingLabel ? (
+                <p
+                  className={`mb-3 text-xs ${
+                    isOverdue ? "text-red-300" : "text-slate-400"
+                  }`}
+                >
+                  {remainingLabel}
+                </p>
               ) : null}
 
               <ProgressBar percentage={progress} />
@@ -149,6 +210,7 @@ export function TaskCard({
                 setIsEditing(true);
                 setEditingTitle(task.title);
                 setEditingDescription(task.description ?? "");
+                setEditingDueDate(task.due_date ?? "");
                 setTaskError(null);
               }}
               className="rounded-lg px-2 py-1 text-sm text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"

@@ -3,6 +3,7 @@ export type Task = {
   title: string;
   description: string | null;
   position: number;
+  due_date: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -30,4 +31,16 @@ export function calculateTaskProgress(subtasks: Subtask[]) {
   );
 
   return (completedWeight / totalWeight) * 100;
+}
+
+function getDueDateValue(dueDate: string | null) {
+  return dueDate ? new Date(`${dueDate}T00:00:00`).getTime() : Number.POSITIVE_INFINITY;
+}
+
+export function sortTasksByDeadline(tasks: Task[]) {
+  return [...tasks].sort((a, b) => {
+    const dueDateDiff = getDueDateValue(a.due_date) - getDueDateValue(b.due_date);
+    if (dueDateDiff !== 0) return dueDateDiff;
+    return a.position - b.position;
+  });
 }
