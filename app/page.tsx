@@ -241,29 +241,17 @@ export default function HomePage() {
       setPomodoroRemainingSeconds(diffSeconds);
 
       if (diffSeconds <= 0) {
-        setPomodoroRunning(false);
-        setPomodoroTargetTime(null);
-        void playAlarm();
-        void completePomodoroSession();
-
-        if (pomodoroPhase === "focus") {
-          setPomodoroPhase("break");
-          setPomodoroRemainingSeconds(pomodoroBreakMinutes * 60);
-          return;
-        }
-
-        setPomodoroPhase("focus");
-        setPomodoroRemainingSeconds(pomodoroWorkMinutes * 60);
+        clearInterval(interval);
+        void advancePomodoroPhase(pomodoroPhase, currentPomodoroSessionId);
       }
     }, 1000);
 
     return () => clearInterval(interval);
   }, [
-    pomodoroBreakMinutes,
+    currentPomodoroSessionId,
     pomodoroPhase,
     pomodoroRunning,
     pomodoroTargetTime,
-    pomodoroWorkMinutes,
   ]);
 
   const cargarLogs = async () => {
@@ -526,11 +514,11 @@ export default function HomePage() {
     setStopwatchError(null);
   };
 
-  const completePomodoroSession = useEffectEvent(async () => {
-    if (!currentPomodoroSessionId) return;
+  const completePomodoroSession = useEffectEvent(async (sessionId: number) => {
+    if (!sessionId) return;
 
     try {
-      const response = await fetch(`/api/pomodoro/${currentPomodoroSessionId}`, {
+      const response = await fetch(`/api/pomodoro/${sessionId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ completedAt: new Date().toISOString() }),
@@ -541,53 +529,91 @@ export default function HomePage() {
       await cargarPomodoroSummary();
     } catch (error) {
       console.error("Error completando sesión pomodoro:", error);
-    } finally {
-      setCurrentPomodoroSessionId(null);
     }
   });
 
-  const handlePomodoroStart = async () => {
+  const startPomodoroPhase = async (
+    phase: "focus" | "break",
+    cycleNumberOverride?: number
+  ) => {
     const phaseMinutes =
-      pomodoroPhase === "focus" ? pomodoroWorkMinutes : pomodoroBreakMinutes;
+      phase === "focus" ? pomodoroWorkMinutes : pomodoroBreakMinutes;
 
     if (phaseMinutes <= 0) return;
 
     await ensureAudioContext();
 
-    if (!currentPomodoroSessionId) {
-      try {
-        const startedAt = new Date().toISOString();
-        const res = await fetch("/api/pomodoro", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            phase: pomodoroPhase,
-            durationMinutes: phaseMinutes,
-            startedAt,
-            cycleNumber:
-              pomodoroPhase === "focus"
-                ? completedPomodorosToday + 1
-                : Math.max(1, completedPomodorosToday),
-          }),
-        });
+    try {
+      const startedAt = new Date().toISOString();
+      const res = await fetch("/api/pomodoro", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phase,
+          durationMinutes: phaseMinutes,
+          startedAt,
+          cycleNumber:
+            cycleNumberOverride ??
+            (phase === "focus"
+              ? completedPomodorosToday + 1
+              : Math.max(1, completedPomodorosToday)),
+        }),
+      });
 
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data?.error || "No se pudo crear la sesión pomodoro");
-        }
-
-        if (typeof data?.id === "number") {
-          setCurrentPomodoroSessionId(data.id);
-        }
-      } catch (error) {
-        console.error("Error creando sesión pomodoro:", error);
-        return;
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "No se pudo crear la sesión pomodoro");
       }
+
+      setPomodoroPhase(phase);
+      setCurrentPomodoroSessionId(typeof data?.id === "number" ? data.id : null);
+    } catch (error) {
+      console.error("Error creando sesión pomodoro:", error);
+      return;
     }
 
     setPomodoroTargetTime(Date.now() + phaseMinutes * 60 * 1000);
     setPomodoroRemainingSeconds(phaseMinutes * 60);
     setPomodoroRunning(true);
+  };
+
+  const advancePomodoroPhase = useEffectEvent(
+    async (
+      finishedPhase: "focus" | "break",
+      finishedSessionId: number | null
+    ) => {
+      setPomodoroRunning(false);
+      setPomodoroTargetTime(null);
+      void playAlarm();
+
+      if (finishedSessionId) {
+        await completePomodoroSession(finishedSessionId);
+      }
+
+      const nextPhase = finishedPhase === "focus" ? "break" : "focus";
+      const nextCycleNumber =
+        finishedPhase === "focus"
+          ? completedPomodorosToday + 1
+          : completedPomodorosToday + 1;
+
+      setCurrentPomodoroSessionId(null);
+      await startPomodoroPhase(nextPhase, nextCycleNumber);
+    }
+  );
+
+  const handlePomodoroStart = async () => {
+    if (pomodoroRunning) return;
+
+    if (currentPomodoroSessionId) {
+      const phaseMinutes =
+        pomodoroPhase === "focus" ? pomodoroWorkMinutes : pomodoroBreakMinutes;
+      setPomodoroTargetTime(Date.now() + phaseMinutes * 60 * 1000);
+      setPomodoroRemainingSeconds(phaseMinutes * 60);
+      setPomodoroRunning(true);
+      return;
+    }
+
+    await startPomodoroPhase(pomodoroPhase);
   };
 
   const handlePomodoroPause = () => {
