@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { useEffectEvent } from "react";
 import { TaskCard } from "@/components/TaskCard";
@@ -915,6 +916,33 @@ export default function HomePage() {
   return (
     <main className="min-h-screen bg-slate-900 text-white">
       <div className="mx-auto w-full max-w-5xl space-y-6 p-4 md:p-6">
+        <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-lg">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                Navegacion
+              </p>
+              <p className="mt-1 text-sm text-slate-400">
+                Accede a las paginas auxiliares del proyecto sin salir del dashboard.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/habitos"
+                className="inline-flex items-center justify-center rounded-lg border border-cyan-800 bg-cyan-950/40 px-4 py-2 text-sm font-medium text-cyan-200 transition hover:border-cyan-600 hover:bg-cyan-950/70 hover:text-cyan-100"
+              >
+                Abrir habitos
+              </Link>
+              <Link
+                href="/decisciones"
+                className="inline-flex items-center justify-center rounded-lg border border-amber-800 bg-amber-950/40 px-4 py-2 text-sm font-medium text-amber-200 transition hover:border-amber-600 hover:bg-amber-950/70 hover:text-amber-100"
+              >
+                Abrir decisciones
+              </Link>
+            </div>
+          </div>
+        </section>
+
         <section className="rounded-xl bg-slate-800 p-6 shadow-lg">
           <div className="space-y-4">
             <div>
