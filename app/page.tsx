@@ -934,6 +934,12 @@ export default function HomePage() {
                 Abrir habitos
               </Link>
               <Link
+                href="/planificacion"
+                className="inline-flex items-center justify-center rounded-lg border border-sky-800 bg-sky-950/40 px-4 py-2 text-sm font-medium text-sky-200 transition hover:border-sky-600 hover:bg-sky-950/70 hover:text-sky-100"
+              >
+                Abrir planificacion
+              </Link>
+              <Link
                 href="/decisciones"
                 className="inline-flex items-center justify-center rounded-lg border border-amber-800 bg-amber-950/40 px-4 py-2 text-sm font-medium text-amber-200 transition hover:border-amber-600 hover:bg-amber-950/70 hover:text-amber-100"
               >
