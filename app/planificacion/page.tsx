@@ -192,10 +192,10 @@ export default function PlanificacionPage() {
                 Ritual diario
               </div>
               <h1 className="text-3xl font-semibold tracking-tight text-slate-50 md:text-4xl">
-                Planificacion de 15 minutos
+                Planificacion de 7 minutos
               </h1>
               <p className="max-w-2xl text-sm leading-6 text-slate-400 md:text-base">
-                Marca si planificaste tu dia durante 15 minutos. La regla es fija,
+                Marca si planificaste tu dia durante 7 minutos. La regla es fija,
                 asi que aqui solo registras si se hizo, si fallo o si aun esta
                 pendiente.
               </p>
@@ -221,7 +221,7 @@ export default function PlanificacionPage() {
                 Bitacora de planificacion
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-400">
-                Cada fila representa un unico check diario: ¿hiciste o no tus 15
+                Cada fila representa un unico check diario: ¿hiciste o no tus 7
                 minutos de planificacion?
               </p>
             </div>
@@ -298,7 +298,7 @@ export default function PlanificacionPage() {
                         <>
                           <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                           <span className="text-emerald-300">
-                            Ese dia si hiciste tus 15 minutos de planificacion.
+                            Ese dia si hiciste tus 7 minutos de planificacion.
                           </span>
                         </>
                       ) : row.status === "failed" ? (
