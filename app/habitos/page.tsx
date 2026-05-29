@@ -263,7 +263,7 @@ export default function HabitosPage() {
                 Seguimiento diario
               </div>
               <h1 className="text-3xl font-semibold tracking-tight text-slate-50 md:text-4xl">
-                Habitos de concentracion
+                Prevencion obligatoria
               </h1>
               <p className="max-w-2xl text-sm leading-6 text-slate-400 md:text-base">
                 Registra lo que lograste hoy o completa dias olvidados sin salir del
