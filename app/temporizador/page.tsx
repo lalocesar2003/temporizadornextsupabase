@@ -189,7 +189,7 @@ export default function TemporizadorPage() {
                 Temporizador
               </div>
               <h1 className="text-3xl font-semibold tracking-tight text-slate-50 md:text-4xl">
-                Temporizador con registro en Supabase
+                Temporizador de registro de concentracion
               </h1>
               <p className="max-w-2xl text-sm leading-6 text-slate-400 md:text-base">
                 Usa un contador simple, guarda cada inicio con minutos y etiqueta, y
