@@ -40,6 +40,14 @@ type TimerLog = {
   label: string | null;
 };
 
+type ObjectiveLog = {
+  id: number;
+  entry_date: string;
+  completed_items: string[];
+  created_at: string;
+  updated_at: string;
+};
+
 function formatTime(seconds: number) {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -134,12 +142,14 @@ export default function HomePage() {
     planning: DashboardLinkStatus;
     whatsapp: DashboardLinkStatus;
     decisions: DashboardLinkStatus;
+    objectives: DashboardLinkStatus;
   }>({
     habits: "idle",
     timer: "idle",
     planning: "idle",
     whatsapp: "idle",
     decisions: "idle",
+    objectives: "idle",
   });
 
   const ensureAudioContext = async () => {
@@ -373,14 +383,21 @@ export default function HomePage() {
   useEffect(() => {
     const cargarDashboardLinkStatus = async () => {
       try {
-        const [habitsRes, timersRes, planningRes, whatsappRes, decisionsRes] =
-          await Promise.all([
-            fetch(`/api/habits?date=${todayKey}`),
-            fetch("/api/timers"),
-            fetch(`/api/planning?date=${todayKey}`),
-            fetch(`/api/whatsapp-status?date=${todayKey}`),
-            fetch(`/api/decisions?date=${todayKey}`),
-          ]);
+        const [
+          habitsRes,
+          timersRes,
+          planningRes,
+          whatsappRes,
+          decisionsRes,
+          objectivesRes,
+        ] = await Promise.all([
+          fetch(`/api/habits?date=${todayKey}`),
+          fetch("/api/timers"),
+          fetch(`/api/planning?date=${todayKey}`),
+          fetch(`/api/whatsapp-status?date=${todayKey}`),
+          fetch(`/api/decisions?date=${todayKey}`),
+          fetch(`/api/objectives?date=${todayKey}`),
+        ]);
 
         const [
           habitsData,
@@ -388,6 +405,7 @@ export default function HomePage() {
           planningData,
           whatsappData,
           decisionsData,
+          objectivesData,
         ] =
           await Promise.all([
             habitsRes.ok ? habitsRes.json() : null,
@@ -395,9 +413,14 @@ export default function HomePage() {
             planningRes.ok ? planningRes.json() : null,
             whatsappRes.ok ? whatsappRes.json() : null,
             decisionsRes.ok ? decisionsRes.json() : null,
+            objectivesRes.ok ? objectivesRes.json() : null,
           ]);
 
         const timerLogs = Array.isArray(timersData) ? (timersData as TimerLog[]) : [];
+        const objectiveLog =
+          objectivesData && typeof objectivesData === "object"
+            ? (objectivesData as ObjectiveLog)
+            : null;
         const timerDoneToday = timerLogs.some((log) => {
           const logDate = getTimeZoneDateKey(
             new Date(log.executed_at),
@@ -417,6 +440,12 @@ export default function HomePage() {
           planning: planningData?.status === "completed" ? "done" : "todo",
           whatsapp: whatsappData?.status === "completed" ? "done" : "todo",
           decisions: decisionsData?.status === "completed" ? "done" : "todo",
+          objectives:
+            objectiveLog &&
+            Array.isArray(objectiveLog.completed_items) &&
+            objectiveLog.completed_items.length > 0
+              ? "done"
+              : "todo",
         });
       } catch (error) {
         console.error("Error cargando estados del dashboard:", error);
@@ -426,6 +455,7 @@ export default function HomePage() {
           planning: "todo",
           whatsapp: "todo",
           decisions: "todo",
+          objectives: "todo",
         });
       }
     };
@@ -959,6 +989,14 @@ export default function HomePage() {
                 )}`}
               >
                 Abrir decisciones
+              </Link>
+              <Link
+                href="/objetivos-dia"
+                className={`inline-flex items-center justify-center rounded-lg border px-4 py-2 text-sm font-medium transition ${dashboardLinkClasses(
+                  dashboardLinkStatus.objectives
+                )}`}
+              >
+                Abrir objetivos del dia
               </Link>
             </div>
           </div>
