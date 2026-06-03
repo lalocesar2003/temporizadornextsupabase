@@ -4,15 +4,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { useEffectEvent } from "react";
 import { TaskCard } from "@/components/TaskCard";
+import { HABITS_TIME_ZONE, getTimeZoneDateKey } from "@/lib/habits";
 import { sortTasksByDeadline, type Subtask, type Task } from "@/lib/taskTypes";
-
-type TimerLog = {
-  id: number;
-  configured_minutes: number;
-  executed_at: string;
-  created_at: string;
-  label: string | null;
-};
 
 type ThoughtLog = {
   id: number;
@@ -35,6 +28,16 @@ type StopwatchLog = {
   ended_at: string;
   duration_seconds: number;
   created_at: string;
+};
+
+type DashboardLinkStatus = "idle" | "done" | "todo";
+
+type TimerLog = {
+  id: number;
+  configured_minutes: number;
+  executed_at: string;
+  created_at: string;
+  label: string | null;
 };
 
 function formatTime(seconds: number) {
@@ -66,14 +69,8 @@ function formatDateTime(iso: string) {
 
 export default function HomePage() {
   const audioContextRef = useRef<AudioContext | null>(null);
+  const todayKey = getTimeZoneDateKey(new Date(), HABITS_TIME_ZONE);
 
-  const [label, setLabel] = useState("");
-  const [minutes, setMinutes] = useState(1);
-  const [remainingSeconds, setRemainingSeconds] = useState(60);
-  const [running, setRunning] = useState(false);
-  const [logs, setLogs] = useState<TimerLog[]>([]);
-  const [loadingLogs, setLoadingLogs] = useState(false);
-  const [targetTime, setTargetTime] = useState<number | null>(null);
   const [stopwatchLabel, setStopwatchLabel] = useState("");
   const [stopwatchRunning, setStopwatchRunning] = useState(false);
   const [stopwatchElapsedSeconds, setStopwatchElapsedSeconds] = useState(0);
@@ -131,6 +128,19 @@ export default function HomePage() {
   const [submittingTask, setSubmittingTask] = useState(false);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [dropTargetTaskId, setDropTargetTaskId] = useState<string | null>(null);
+  const [dashboardLinkStatus, setDashboardLinkStatus] = useState<{
+    habits: DashboardLinkStatus;
+    timer: DashboardLinkStatus;
+    planning: DashboardLinkStatus;
+    whatsapp: DashboardLinkStatus;
+    decisions: DashboardLinkStatus;
+  }>({
+    habits: "idle",
+    timer: "idle",
+    planning: "idle",
+    whatsapp: "idle",
+    decisions: "idle",
+  });
 
   const ensureAudioContext = async () => {
     if (typeof window === "undefined") return null;
@@ -181,12 +191,6 @@ export default function HomePage() {
   });
 
   useEffect(() => {
-    if (!running) {
-      setRemainingSeconds(minutes * 60);
-    }
-  }, [minutes, running]);
-
-  useEffect(() => {
     if (pomodoroRunning) return;
 
     if (pomodoroPhase === "focus") {
@@ -196,26 +200,6 @@ export default function HomePage() {
 
     setPomodoroRemainingSeconds(pomodoroBreakMinutes * 60);
   }, [pomodoroBreakMinutes, pomodoroPhase, pomodoroRunning, pomodoroWorkMinutes]);
-
-  useEffect(() => {
-    if (!running || !targetTime) return;
-
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const diffMs = targetTime - now;
-      const diffSeconds = Math.max(0, Math.floor(diffMs / 1000));
-
-      setRemainingSeconds(diffSeconds);
-
-      if (diffSeconds <= 0) {
-        setRunning(false);
-        clearInterval(interval);
-        void playAlarm();
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [running, targetTime]);
 
   useEffect(() => {
     if (!stopwatchRunning || !stopwatchStartTime) return;
@@ -254,23 +238,6 @@ export default function HomePage() {
     pomodoroRunning,
     pomodoroTargetTime,
   ]);
-
-  const cargarLogs = async () => {
-    setLoadingLogs(true);
-    try {
-      const res = await fetch("/api/timers");
-      if (!res.ok) {
-        throw new Error("No se pudieron obtener los registros");
-      }
-      const data = await res.json();
-      setLogs(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error("Error cargando logs:", error);
-      setLogs([]);
-    } finally {
-      setLoadingLogs(false);
-    }
-  };
 
   const cargarThoughts = async () => {
     setLoadingThoughts(true);
@@ -404,55 +371,83 @@ export default function HomePage() {
   };
 
   useEffect(() => {
-    void cargarLogs();
+    const cargarDashboardLinkStatus = async () => {
+      try {
+        const [habitsRes, timersRes, planningRes, whatsappRes, decisionsRes] =
+          await Promise.all([
+            fetch(`/api/habits?date=${todayKey}`),
+            fetch("/api/timers"),
+            fetch(`/api/planning?date=${todayKey}`),
+            fetch(`/api/whatsapp-status?date=${todayKey}`),
+            fetch(`/api/decisions?date=${todayKey}`),
+          ]);
+
+        const [
+          habitsData,
+          timersData,
+          planningData,
+          whatsappData,
+          decisionsData,
+        ] =
+          await Promise.all([
+            habitsRes.ok ? habitsRes.json() : null,
+            timersRes.ok ? timersRes.json() : null,
+            planningRes.ok ? planningRes.json() : null,
+            whatsappRes.ok ? whatsappRes.json() : null,
+            decisionsRes.ok ? decisionsRes.json() : null,
+          ]);
+
+        const timerLogs = Array.isArray(timersData) ? (timersData as TimerLog[]) : [];
+        const timerDoneToday = timerLogs.some((log) => {
+          const logDate = getTimeZoneDateKey(
+            new Date(log.executed_at),
+            HABITS_TIME_ZONE
+          );
+          return logDate === todayKey;
+        });
+
+        setDashboardLinkStatus({
+          habits:
+            habitsData &&
+            typeof habitsData.focused_minutes === "number" &&
+            habitsData.focused_minutes > 0
+              ? "done"
+              : "todo",
+          timer: timerDoneToday ? "done" : "todo",
+          planning: planningData?.status === "completed" ? "done" : "todo",
+          whatsapp: whatsappData?.status === "completed" ? "done" : "todo",
+          decisions: decisionsData?.status === "completed" ? "done" : "todo",
+        });
+      } catch (error) {
+        console.error("Error cargando estados del dashboard:", error);
+        setDashboardLinkStatus({
+          habits: "todo",
+          timer: "todo",
+          planning: "todo",
+          whatsapp: "todo",
+          decisions: "todo",
+        });
+      }
+    };
+
     void cargarThoughts();
     void cargarStopwatchLogs();
     void cargarPomodoroSummary();
     void cargarNotes();
     void cargarTasks();
-  }, []);
+    void cargarDashboardLinkStatus();
+  }, [todayKey]);
 
-  const handleStart = async () => {
-    if (minutes <= 0) return;
-
-    const now = new Date();
-    const target = now.getTime() + minutes * 60 * 1000;
-
-    await ensureAudioContext();
-
-    setTargetTime(target);
-    setRemainingSeconds(minutes * 60);
-    setRunning(true);
-
-    try {
-      const res = await fetch("/api/timers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          configuredMinutes: minutes,
-          executedAt: now.toISOString(),
-          label,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error("Error guardando temporizador");
-      }
-
-      await cargarLogs();
-    } catch (error) {
-      console.error("Error guardando el temporizador:", error);
+  const dashboardLinkClasses = (status: DashboardLinkStatus) => {
+    if (status === "done") {
+      return "border-emerald-700 bg-emerald-950/50 text-emerald-200 hover:border-emerald-500 hover:bg-emerald-950/80 hover:text-emerald-100";
     }
-  };
 
-  const handleStop = () => {
-    setRunning(false);
-  };
+    if (status === "todo") {
+      return "border-rose-800 bg-rose-950/40 text-rose-200 hover:border-rose-600 hover:bg-rose-950/70 hover:text-rose-100";
+    }
 
-  const handleReset = () => {
-    setRunning(false);
-    setTargetTime(null);
-    setRemainingSeconds(minutes * 60);
+    return "border-slate-700 bg-slate-900/60 text-slate-300 hover:border-slate-500 hover:bg-slate-900/80 hover:text-white";
   };
 
   const handleStopwatchStart = async () => {
@@ -911,8 +906,6 @@ export default function HomePage() {
     }
   };
 
-  const latestLog = logs[0] ?? null;
-
   return (
     <main className="min-h-screen bg-slate-900 text-white">
       <div className="mx-auto w-full max-w-5xl space-y-6 p-4 md:p-6">
@@ -929,25 +922,41 @@ export default function HomePage() {
             <div className="flex flex-wrap gap-2">
               <Link
                 href="/habitos"
-                className="inline-flex items-center justify-center rounded-lg border border-cyan-800 bg-cyan-950/40 px-4 py-2 text-sm font-medium text-cyan-200 transition hover:border-cyan-600 hover:bg-cyan-950/70 hover:text-cyan-100"
+                className={`inline-flex items-center justify-center rounded-lg border px-4 py-2 text-sm font-medium transition ${dashboardLinkClasses(
+                  dashboardLinkStatus.habits
+                )}`}
               >
                 Abrir habitos
               </Link>
               <Link
+                href="/temporizador"
+                className={`inline-flex items-center justify-center rounded-lg border px-4 py-2 text-sm font-medium transition ${dashboardLinkClasses(
+                  dashboardLinkStatus.timer
+                )}`}
+              >
+                Abrir temporizador
+              </Link>
+              <Link
                 href="/planificacion"
-                className="inline-flex items-center justify-center rounded-lg border border-sky-800 bg-sky-950/40 px-4 py-2 text-sm font-medium text-sky-200 transition hover:border-sky-600 hover:bg-sky-950/70 hover:text-sky-100"
+                className={`inline-flex items-center justify-center rounded-lg border px-4 py-2 text-sm font-medium transition ${dashboardLinkClasses(
+                  dashboardLinkStatus.planning
+                )}`}
               >
                 Abrir planificacion
               </Link>
               <Link
                 href="/estado-whatsapp"
-                className="inline-flex items-center justify-center rounded-lg border border-emerald-800 bg-emerald-950/40 px-4 py-2 text-sm font-medium text-emerald-200 transition hover:border-emerald-600 hover:bg-emerald-950/70 hover:text-emerald-100"
+                className={`inline-flex items-center justify-center rounded-lg border px-4 py-2 text-sm font-medium transition ${dashboardLinkClasses(
+                  dashboardLinkStatus.whatsapp
+                )}`}
               >
                 Abrir estado whatsapp
               </Link>
               <Link
                 href="/decisciones"
-                className="inline-flex items-center justify-center rounded-lg border border-amber-800 bg-amber-950/40 px-4 py-2 text-sm font-medium text-amber-200 transition hover:border-amber-600 hover:bg-amber-950/70 hover:text-amber-100"
+                className={`inline-flex items-center justify-center rounded-lg border px-4 py-2 text-sm font-medium transition ${dashboardLinkClasses(
+                  dashboardLinkStatus.decisions
+                )}`}
               >
                 Abrir decisciones
               </Link>
@@ -1020,121 +1029,6 @@ export default function HomePage() {
                   </button>
                 </div>
               </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="space-y-6 rounded-xl bg-slate-800 p-6 shadow-lg">
-          <h1 className="text-2xl font-bold text-center md:text-left">
-            Temporizador con registro en Supabase
-          </h1>
-
-          <div className="grid gap-6 md:grid-cols-2">
-            <div className="space-y-4">
-              <label className="block text-sm">
-                Minutos:
-                <input
-                  type="number"
-                  min={1}
-                  value={minutes}
-                  onChange={(e) => setMinutes(Number(e.target.value))}
-                  className="mt-1 w-full rounded-md bg-slate-700 px-3 py-2 outline-none"
-                  disabled={running}
-                />
-              </label>
-              <label className="block text-sm">
-                Etiqueta:
-                <input
-                  type="text"
-                  value={label}
-                  onChange={(e) => setLabel(e.target.value)}
-                  placeholder="Ej: Estudio, Trabajo, Gym..."
-                  className="mt-1 w-full rounded-md bg-slate-700 px-3 py-2 outline-none"
-                  disabled={running}
-                  maxLength={80}
-                />
-              </label>
-
-              <div className="text-center font-mono text-5xl">
-                {formatTime(remainingSeconds)}
-              </div>
-
-              <div className="flex justify-center gap-2">
-                <button
-                  onClick={() => void handleStart()}
-                  disabled={running}
-                  className="rounded bg-green-600 px-4 py-2 disabled:opacity-50"
-                >
-                  Iniciar
-                </button>
-                <button
-                  onClick={handleStop}
-                  disabled={!running}
-                  className="rounded bg-yellow-500 px-4 py-2 disabled:opacity-50"
-                >
-                  Pausar
-                </button>
-                <button
-                  onClick={handleReset}
-                  className="rounded bg-red-600 px-4 py-2"
-                >
-                  Reset
-                </button>
-              </div>
-
-              <p className="text-center text-xs text-slate-400">
-                Cada vez que presionas <b>Iniciar</b>, se guarda en Supabase: el
-                dia, los minutos configurados y la hora de ejecucion.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h2 className="font-semibold">Ultimo registro</h2>
-                <button
-                  onClick={() => void cargarLogs()}
-                  className="rounded bg-slate-700 px-2 py-1 text-xs"
-                >
-                  Actualizar
-                </button>
-              </div>
-
-              {loadingLogs ? (
-                <p className="text-sm text-slate-400">Cargando registros...</p>
-              ) : !latestLog ? (
-                <p className="text-sm text-slate-400">
-                  Aun no hay registros de temporizadores.
-                </p>
-              ) : (
-                <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-4">
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Fecha
-                      </p>
-                      <p>{formatDateTime(latestLog.executed_at).date}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Hora
-                      </p>
-                      <p>{formatDateTime(latestLog.executed_at).time}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Min
-                      </p>
-                      <p>{latestLog.configured_minutes}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Etiqueta
-                      </p>
-                      <p>{latestLog.label || "-"}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </section>
