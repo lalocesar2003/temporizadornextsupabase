@@ -48,6 +48,14 @@ type ObjectiveLog = {
   updated_at: string;
 };
 
+type VideoProgressLog = {
+  id: number;
+  entry_date: string;
+  completed_items: string[];
+  created_at: string;
+  updated_at: string;
+};
+
 function formatTime(seconds: number) {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -421,6 +429,10 @@ export default function HomePage() {
           objectivesData && typeof objectivesData === "object"
             ? (objectivesData as ObjectiveLog)
             : null;
+        const videoProgressLog =
+          whatsappData && typeof whatsappData === "object"
+            ? (whatsappData as VideoProgressLog)
+            : null;
         const timerDoneToday = timerLogs.some((log) => {
           const logDate = getTimeZoneDateKey(
             new Date(log.executed_at),
@@ -438,7 +450,12 @@ export default function HomePage() {
               : "todo",
           timer: timerDoneToday ? "done" : "todo",
           planning: planningData?.status === "completed" ? "done" : "todo",
-          whatsapp: whatsappData?.status === "completed" ? "done" : "todo",
+          whatsapp:
+            videoProgressLog &&
+            Array.isArray(videoProgressLog.completed_items) &&
+            videoProgressLog.completed_items.length > 0
+              ? "done"
+              : "todo",
           decisions: decisionsData?.status === "completed" ? "done" : "todo",
           objectives:
             objectiveLog &&
@@ -980,7 +997,7 @@ export default function HomePage() {
                   dashboardLinkStatus.whatsapp
                 )}`}
               >
-                Abrir estado whatsapp
+                Abrir avance video
               </Link>
               <Link
                 href="/decisciones"

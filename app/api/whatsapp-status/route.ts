@@ -5,16 +5,14 @@ import {
   isValidWhatsappStatusDateKey,
   normalizeWhatsappStatusRow,
   type DailyWhatsappStatusLog,
-  type WhatsappStatus,
 } from "@/lib/whatsappStatus";
 
 function normalizePayload(body: {
   entryDate?: string;
-  status?: string;
+  completedItems?: unknown;
 }) {
   const entryDate =
     typeof body.entryDate === "string" ? body.entryDate.trim() : "";
-  const status = body.status;
 
   if (!isValidWhatsappStatusDateKey(entryDate)) {
     return { error: "entryDate debe tener formato YYYY-MM-DD" };
@@ -24,17 +22,17 @@ function normalizePayload(body: {
     return { error: "No se pueden guardar fechas futuras" };
   }
 
-  if (
-    status !== "pending" &&
-    status !== "completed" &&
-    status !== "failed"
-  ) {
-    return { error: "status debe ser pending, completed o failed" };
+  if (!Array.isArray(body.completedItems)) {
+    return { error: "completedItems debe ser un arreglo" };
   }
+
+  const completedItems = body.completedItems
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter((item) => item.length > 0);
 
   return {
     entryDate,
-    status: status as WhatsappStatus,
+    completedItems,
   };
 }
 
@@ -56,15 +54,15 @@ export async function GET(req: NextRequest) {
   }
 
   const { data, error } = await supabaseAdmin
-    .from("daily_whatsapp_status_logs")
+    .from("daily_video_progress_logs")
     .select("*")
     .eq("entry_date", date)
     .maybeSingle();
 
   if (error) {
-    console.error("Error leyendo whatsapp status:", error);
+    console.error("Error leyendo avance video:", error);
     return NextResponse.json(
-      { error: "Error al obtener el registro de estado de WhatsApp" },
+      { error: "Error al obtener el registro de avance video" },
       { status: 500 }
     );
   }
@@ -78,7 +76,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as {
       entryDate?: string;
-      status?: string;
+      completedItems?: unknown;
     };
 
     const normalized = normalizePayload(body);
@@ -87,11 +85,11 @@ export async function POST(req: NextRequest) {
     }
 
     const { data, error } = await supabaseAdmin
-      .from("daily_whatsapp_status_logs")
+      .from("daily_video_progress_logs")
       .upsert(
         {
           entry_date: normalized.entryDate,
-          status: normalized.status,
+          completed_items: normalized.completedItems,
         },
         { onConflict: "entry_date" }
       )
@@ -99,9 +97,9 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error) {
-      console.error("Error guardando whatsapp status:", error);
+      console.error("Error guardando avance video:", error);
       return NextResponse.json(
-        { error: "Error al guardar el registro de estado de WhatsApp" },
+        { error: "Error al guardar el registro de avance video" },
         { status: 500 }
       );
     }

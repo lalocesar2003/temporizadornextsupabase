@@ -8,19 +8,17 @@ import {
 
 export const WHATSAPP_STATUS_TIME_ZONE = HABITS_TIME_ZONE;
 
-export type WhatsappStatus = "pending" | "completed" | "failed";
-
 export type DailyWhatsappStatusLog = {
   id: number;
   entry_date: string;
-  status: WhatsappStatus;
+  completed_items: string[];
   created_at: string;
   updated_at: string;
 };
 
 export type RecentWhatsappStatusDay = {
   date: string;
-  status: WhatsappStatus;
+  completedItems: string[];
 };
 
 export function getWhatsappStatusTodayKey() {
@@ -46,9 +44,10 @@ export function normalizeWhatsappStatusRow(
 
   return {
     ...row,
-    status:
-      row.status === "completed" || row.status === "failed"
-        ? row.status
-        : "pending",
+    completed_items: Array.isArray(row.completed_items)
+      ? row.completed_items
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter((item) => item.length > 0)
+      : [],
   };
 }
