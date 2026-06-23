@@ -147,6 +147,7 @@ export default function HomePage() {
   const [dashboardLinkStatus, setDashboardLinkStatus] = useState<{
     habits: DashboardLinkStatus;
     timer: DashboardLinkStatus;
+    homeFocus: DashboardLinkStatus;
     planning: DashboardLinkStatus;
     whatsapp: DashboardLinkStatus;
     decisions: DashboardLinkStatus;
@@ -154,6 +155,7 @@ export default function HomePage() {
   }>({
     habits: "idle",
     timer: "idle",
+    homeFocus: "idle",
     planning: "idle",
     whatsapp: "idle",
     decisions: "idle",
@@ -394,6 +396,7 @@ export default function HomePage() {
         const [
           habitsRes,
           timersRes,
+          homeFocusRes,
           planningRes,
           whatsappRes,
           decisionsRes,
@@ -401,6 +404,7 @@ export default function HomePage() {
         ] = await Promise.all([
           fetch(`/api/habits?date=${todayKey}`),
           fetch("/api/timers"),
+          fetch("/api/home-focus-timers"),
           fetch(`/api/planning?date=${todayKey}`),
           fetch(`/api/whatsapp-status?date=${todayKey}`),
           fetch(`/api/decisions?date=${todayKey}`),
@@ -410,6 +414,7 @@ export default function HomePage() {
         const [
           habitsData,
           timersData,
+          homeFocusData,
           planningData,
           whatsappData,
           decisionsData,
@@ -418,6 +423,7 @@ export default function HomePage() {
           await Promise.all([
             habitsRes.ok ? habitsRes.json() : null,
             timersRes.ok ? timersRes.json() : null,
+            homeFocusRes.ok ? homeFocusRes.json() : null,
             planningRes.ok ? planningRes.json() : null,
             whatsappRes.ok ? whatsappRes.json() : null,
             decisionsRes.ok ? decisionsRes.json() : null,
@@ -425,6 +431,9 @@ export default function HomePage() {
           ]);
 
         const timerLogs = Array.isArray(timersData) ? (timersData as TimerLog[]) : [];
+        const homeFocusLogs = Array.isArray(homeFocusData)
+          ? (homeFocusData as TimerLog[])
+          : [];
         const objectiveLog =
           objectivesData && typeof objectivesData === "object"
             ? (objectivesData as ObjectiveLog)
@@ -440,6 +449,13 @@ export default function HomePage() {
           );
           return logDate === todayKey;
         });
+        const homeFocusDoneToday = homeFocusLogs.some((log) => {
+          const logDate = getTimeZoneDateKey(
+            new Date(log.executed_at),
+            HABITS_TIME_ZONE
+          );
+          return logDate === todayKey;
+        });
 
         setDashboardLinkStatus({
           habits:
@@ -449,6 +465,7 @@ export default function HomePage() {
               ? "done"
               : "todo",
           timer: timerDoneToday ? "done" : "todo",
+          homeFocus: homeFocusDoneToday ? "done" : "todo",
           planning: planningData?.status === "completed" ? "done" : "todo",
           whatsapp:
             videoProgressLog &&
@@ -469,6 +486,7 @@ export default function HomePage() {
         setDashboardLinkStatus({
           habits: "todo",
           timer: "todo",
+          homeFocus: "todo",
           planning: "todo",
           whatsapp: "todo",
           decisions: "todo",
@@ -982,6 +1000,14 @@ export default function HomePage() {
                 )}`}
               >
                 Abrir temporizador
+              </Link>
+              <Link
+                href="/concentracion-casa"
+                className={`inline-flex items-center justify-center rounded-lg border px-4 py-2 text-sm font-medium transition ${dashboardLinkClasses(
+                  dashboardLinkStatus.homeFocus
+                )}`}
+              >
+                Abrir concentracion casa
               </Link>
               <Link
                 href="/planificacion"
