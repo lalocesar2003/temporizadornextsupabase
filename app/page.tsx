@@ -63,6 +63,28 @@ function formatDateTime(iso: string) {
   return { date, time };
 }
 
+function formatTimeSinceRecord(recordedAt: string, now: number) {
+  const timestamp = Date.parse(recordedAt);
+  if (Number.isNaN(timestamp)) return "No se pudo calcular el tiempo desde el último registro.";
+
+  const totalMinutes = Math.floor(Math.max(0, now - timestamp) / 60000);
+  if (totalMinutes === 0) return "Ha pasado menos de un minuto desde el último registro del cronómetro.";
+
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [
+    days > 0 ? `${days} ${days === 1 ? "día" : "días"}` : null,
+    hours > 0 ? `${hours} ${hours === 1 ? "hora" : "horas"}` : null,
+    minutes > 0 ? `${minutes} ${minutes === 1 ? "minuto" : "minutos"}` : null,
+  ].filter((part): part is string => part !== null);
+  const elapsed = parts.length > 1
+    ? `${parts.slice(0, -1).join(", ")} y ${parts[parts.length - 1]}`
+    : parts[0];
+
+  return `${totalMinutes === 1 || (parts.length === 1 && (days === 1 || hours === 1)) ? "Ha pasado" : "Han pasado"} ${elapsed} desde el último registro del cronómetro.`;
+}
+
 export default function HomePage() {
   const audioContextRef = useRef<AudioContext | null>(null);
 
@@ -83,6 +105,7 @@ export default function HomePage() {
     null
   );
   const [stopwatchLogs, setStopwatchLogs] = useState<StopwatchLog[]>([]);
+  const [recordClock, setRecordClock] = useState<number | null>(null);
   const [loadingStopwatchLogs, setLoadingStopwatchLogs] = useState(false);
   const [stopwatchError, setStopwatchError] = useState<string | null>(null);
   const [pomodoroWorkMinutes, setPomodoroWorkMinutes] = useState(25);
@@ -846,11 +869,140 @@ export default function HomePage() {
     }
   };
 
+  useEffect(() => {
+    const updateClock = () => setRecordClock(Date.now());
+    const initialUpdate = window.setTimeout(updateClock, 0);
+    const interval = window.setInterval(updateClock, 1000);
+    return () => {
+      window.clearTimeout(initialUpdate);
+      window.clearInterval(interval);
+    };
+  }, []);
+
   const latestLog = logs[0] ?? null;
+  const latestStopwatchLog = stopwatchLogs[0] ?? null;
 
   return (
     <main className="min-h-screen bg-slate-900 text-white">
       <div className="mx-auto w-full max-w-5xl space-y-6 p-4 md:p-6">
+        <section className="space-y-5 rounded-xl bg-slate-800 p-6 shadow-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold">Cronometro</h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Cuenta hacia arriba y guarda el resultado cuando detienes la
+                sesion.
+              </p>
+            </div>
+            <button
+              onClick={() => void cargarStopwatchLogs()}
+              className="rounded bg-slate-700 px-2 py-1 text-xs"
+            >
+              Actualizar
+            </button>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="space-y-4">
+              <label className="block text-sm">
+                Etiqueta:
+                <input
+                  type="text"
+                  value={stopwatchLabel}
+                  onChange={(event) => setStopwatchLabel(event.target.value)}
+                  placeholder="Ej: lectura, cardio, revision..."
+                  className="mt-1 w-full rounded-md bg-slate-700 px-3 py-2 outline-none"
+                  disabled={stopwatchRunning}
+                  maxLength={120}
+                />
+              </label>
+
+              <div className="text-center font-mono text-5xl">
+                {formatDuration(stopwatchElapsedSeconds)}
+              </div>
+
+              <div className="flex justify-center gap-2">
+                <button
+                  onClick={() => void handleStopwatchStart()}
+                  disabled={stopwatchRunning}
+                  className="rounded bg-emerald-600 px-4 py-2 disabled:opacity-50"
+                >
+                  Iniciar
+                </button>
+                <button
+                  onClick={() => void handleStopwatchStop()}
+                  disabled={!stopwatchRunning}
+                  className="rounded bg-amber-500 px-4 py-2 text-slate-950 disabled:opacity-50"
+                >
+                  Detener y guardar
+                </button>
+                <button
+                  onClick={handleStopwatchReset}
+                  className="rounded bg-red-600 px-4 py-2"
+                >
+                  Reset
+                </button>
+              </div>
+
+              {stopwatchError ? (
+                <p className="text-sm text-red-300">{stopwatchError}</p>
+              ) : null}
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/60 p-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-200">
+                  Último registro
+                </h3>
+                <span className="text-xs text-slate-500">
+                  {stopwatchRunning ? "corriendo" : "en pausa"}
+                </span>
+              </div>
+
+              {loadingStopwatchLogs ? (
+                <p className="text-sm text-slate-400">
+                  Cargando registros del cronometro...
+                </p>
+              ) : stopwatchLogs.length === 0 ? (
+                <p className="text-sm text-slate-400">
+                  Aun no hay sesiones guardadas.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                <ul>
+                  {stopwatchLogs.slice(0, 1).map((log) => (
+                    <li
+                      key={log.id}
+                      className="rounded-lg border border-slate-700 bg-slate-950/70 p-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-slate-100">
+                            {log.label || "Sesion sin etiqueta"}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {formatDateTime(log.started_at).date}{" "}
+                            {formatDateTime(log.started_at).time}
+                          </p>
+                        </div>
+                        <span className="rounded bg-emerald-950 px-2 py-1 text-xs font-medium text-emerald-300">
+                          {formatDuration(log.duration_seconds)}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                {latestStopwatchLog && recordClock !== null ? (
+                  <p className="rounded-lg border border-emerald-900/60 bg-emerald-950/30 p-3 text-sm text-emerald-200">
+                    {formatTimeSinceRecord(latestStopwatchLog.created_at, recordClock)}
+                  </p>
+                ) : null}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
         <section className="rounded-xl bg-slate-800 p-6 shadow-lg">
           <div className="space-y-4">
             <div>
@@ -1030,117 +1182,6 @@ export default function HomePage() {
                     </div>
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="space-y-5 rounded-xl bg-slate-800 p-6 shadow-lg">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-bold">Cronometro</h2>
-              <p className="mt-1 text-sm text-slate-400">
-                Cuenta hacia arriba y guarda el resultado cuando detienes la
-                sesion.
-              </p>
-            </div>
-            <button
-              onClick={() => void cargarStopwatchLogs()}
-              className="rounded bg-slate-700 px-2 py-1 text-xs"
-            >
-              Actualizar
-            </button>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-2">
-            <div className="space-y-4">
-              <label className="block text-sm">
-                Etiqueta:
-                <input
-                  type="text"
-                  value={stopwatchLabel}
-                  onChange={(event) => setStopwatchLabel(event.target.value)}
-                  placeholder="Ej: lectura, cardio, revision..."
-                  className="mt-1 w-full rounded-md bg-slate-700 px-3 py-2 outline-none"
-                  disabled={stopwatchRunning}
-                  maxLength={120}
-                />
-              </label>
-
-              <div className="text-center font-mono text-5xl">
-                {formatDuration(stopwatchElapsedSeconds)}
-              </div>
-
-              <div className="flex justify-center gap-2">
-                <button
-                  onClick={() => void handleStopwatchStart()}
-                  disabled={stopwatchRunning}
-                  className="rounded bg-emerald-600 px-4 py-2 disabled:opacity-50"
-                >
-                  Iniciar
-                </button>
-                <button
-                  onClick={() => void handleStopwatchStop()}
-                  disabled={!stopwatchRunning}
-                  className="rounded bg-amber-500 px-4 py-2 text-slate-950 disabled:opacity-50"
-                >
-                  Detener y guardar
-                </button>
-                <button
-                  onClick={handleStopwatchReset}
-                  className="rounded bg-red-600 px-4 py-2"
-                >
-                  Reset
-                </button>
-              </div>
-
-              {stopwatchError ? (
-                <p className="text-sm text-red-300">{stopwatchError}</p>
-              ) : null}
-            </div>
-
-            <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/60 p-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-200">
-                  Ultimos registros
-                </h3>
-                <span className="text-xs text-slate-500">
-                  {stopwatchRunning ? "corriendo" : "en pausa"}
-                </span>
-              </div>
-
-              {loadingStopwatchLogs ? (
-                <p className="text-sm text-slate-400">
-                  Cargando registros del cronometro...
-                </p>
-              ) : stopwatchLogs.length === 0 ? (
-                <p className="text-sm text-slate-400">
-                  Aun no hay sesiones guardadas.
-                </p>
-              ) : (
-                <ul className="max-h-72 space-y-2 overflow-y-auto pr-1">
-                  {stopwatchLogs.map((log) => (
-                    <li
-                      key={log.id}
-                      className="rounded-lg border border-slate-700 bg-slate-950/70 p-3"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-medium text-slate-100">
-                            {log.label || "Sesion sin etiqueta"}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {formatDateTime(log.started_at).date}{" "}
-                            {formatDateTime(log.started_at).time}
-                          </p>
-                        </div>
-                        <span className="rounded bg-emerald-950 px-2 py-1 text-xs font-medium text-emerald-300">
-                          {formatDuration(log.duration_seconds)}
-                        </span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
               )}
             </div>
           </div>
