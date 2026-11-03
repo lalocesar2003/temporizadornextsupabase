@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useEffectEvent } from "react";
-import { ArrowLeft, Clock3, History, Home } from "lucide-react";
+import { ArrowLeft, History, Home } from "lucide-react";
 
 type HomeFocusTimerLog = {
   id: number;

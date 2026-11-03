@@ -31,6 +31,13 @@ export async function POST(req: NextRequest) {
 
     const cleanLabel = typeof label === "string" ? label.trim() : "";
 
+    if (!cleanLabel) {
+      return NextResponse.json(
+        { error: "La etiqueta es obligatoria" },
+        { status: 400 }
+      );
+    }
+
     if (!startedAt || Number.isNaN(Date.parse(startedAt))) {
       return NextResponse.json(
         { error: "startedAt debe ser una fecha valida" },
