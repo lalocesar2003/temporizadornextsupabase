@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { useEffectEvent } from "react";
 import { TaskCard } from "@/components/TaskCard";
@@ -458,6 +459,11 @@ export default function HomePage() {
   };
 
   const handleStopwatchStart = async () => {
+    if (!stopwatchLabel.trim()) {
+      setStopwatchError("Escribe una etiqueta antes de iniciar el cronómetro.");
+      return;
+    }
+    setStopwatchLabel(stopwatchLabel.trim());
     await ensureAudioContext();
 
     const startedAt = new Date();
@@ -914,6 +920,8 @@ export default function HomePage() {
                   className="mt-1 w-full rounded-md bg-slate-700 px-3 py-2 outline-none"
                   disabled={stopwatchRunning}
                   maxLength={120}
+                  required
+                  aria-required="true"
                 />
               </label>
 
@@ -1072,7 +1080,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="space-y-6 rounded-xl bg-slate-800 p-6 shadow-lg">
+        <section id="temporizador" className="space-y-6 rounded-xl bg-slate-800 p-6 shadow-lg">
           <h1 className="text-2xl font-bold text-center md:text-left">
             Temporizador con registro en Supabase
           </h1>
@@ -1561,6 +1569,31 @@ export default function HomePage() {
             </p>
           ) : null}
         </section>
+        <footer className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+          <nav aria-label="Navegación del proyecto" className="flex flex-col gap-5 md:flex-row md:items-center">
+            <div className="md:w-64 md:shrink-0">
+              <h2 className="text-xs uppercase tracking-[0.2em] text-slate-400">Navegación</h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Accede a las páginas auxiliares del proyecto sin salir del dashboard.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: "Hábitos", href: "/habitos" },
+                { label: "Temporizador", href: "/temporizador" },
+                { label: "Concentración casa", href: "/concentracion-casa" },
+                { label: "Planificación", href: "/planificacion" },
+                { label: "Avance video", href: "/estado-whatsapp" },
+                { label: "Decisiones", href: "/decisciones" },
+                { label: "Objetivos del día", href: "/objetivos-dia" },
+              ].map(({ label, href }) => (
+                <Link key={label} href={href} className="rounded-lg border border-rose-600 bg-rose-950/30 px-4 py-2 text-sm text-rose-100 transition-colors hover:bg-rose-900/50">
+                  Abrir {label.toLowerCase()}
+                </Link>
+              ))}
+            </div>
+          </nav>
+        </footer>
       </div>
     </main>
   );

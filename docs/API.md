@@ -15,13 +15,13 @@ Las tareas y pasos requieren UUID admitidos por la expresión de versiones 1–5
 | GET `/api/timers` | Últimos 20 por created_at descendente |
 | POST `/api/timers` | configuredMinutes, executedAt, label opcional |
 | GET `/api/stopwatch` | Últimos 20 por created_at descendente |
-| POST `/api/stopwatch` | startedAt, endedAt, durationSeconds, label opcional |
+| POST `/api/stopwatch` | startedAt, endedAt, durationSeconds, label obligatorio |
 | POST `/api/pomodoro` | phase, durationMinutes, startedAt, cycleNumber |
 | PATCH `/api/pomodoro/{id}` | completedAt |
 
 Temporizador: rechaza duración ausente o menor/igual a cero y etiqueta de más de 80 caracteres. No exige rigurosamente tipo numérico ni valida executedAt.
 
-Cronómetro: fechas parseables, duración entera no negativa y etiqueta de hasta 120 caracteres. No comprueba coherencia entre duración y fechas ni que fin sea posterior a inicio.
+Cronómetro: fechas parseables, duración entera no negativa y etiqueta obligatoria de hasta 120 caracteres tras recortar espacios. No comprueba coherencia entre duración y fechas ni que fin sea posterior a inicio.
 
 Pomodoro: phase es focus/break; duración y ciclo son enteros positivos; fechas parseables. No hay GET de historial ni cancelación.
 
