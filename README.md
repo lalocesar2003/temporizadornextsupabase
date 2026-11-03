@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Temporizador y productividad personal
 
-## Getting Started
+Aplicación en español para gestionar temporizadores, cronómetro, Pomodoro, pensamientos, notas y tareas con pasos ponderados. Next.js sirve la interfaz y las rutas API; Supabase almacena los registros.
 
-First, run the development server:
+## Tecnología
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Versiones declaradas: Next.js 16.0.10, React 19.2.0, Supabase JS ^2.87.0, TypeScript ^5 y Tailwind CSS ^4. Las versiones resueltas están en `package-lock.json`.
+
+## Instalación
+
+Requiere Node.js compatible con las dependencias, npm y un proyecto Supabase con el esquema esperado. El repositorio no fija una versión de Node ni incluye migraciones SQL.
+
+```sh
+git clone https://github.com/lalocesar2003/temporizadornextsupabase.git
+cd temporizadornextsupabase
+npm ci
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Crear `.env.local` en la raíz:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```dotenv
+NEXT_PUBLIC_SUPABASE_URL=https://TU_PROYECTO.supabase.co
+SUPABASE_SECRET_KEY=TU_CLAVE_SECRETA_DE_SERVIDOR
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+La clave secreta solo debe usarse en el servidor, sin prefijo `NEXT_PUBLIC_`. Los archivos `.env*` están ignorados por Git.
 
-## Learn More
+```sh
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+Abrir <http://localhost:3000>. Sin ambas variables, el cliente Supabase lanza un error al importarse.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Comandos
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Comando | Función |
+| --- | --- |
+| `npm run dev` | Desarrollo |
+| `npm run lint` | ESLint |
+| `npx tsc --noEmit` | Verificación de tipos tras instalar dependencias |
+| `npm run build` | Compilación de producción |
+| `npm start` | Ejecutar la compilación |
 
-## Deploy on Vercel
+No hay script de pruebas automatizadas. La compilación requiere configurar las variables y puede necesitar conexión para descargar las fuentes Geist.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Documentación
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [Arquitectura y funcionamiento](docs/ARQUITECTURA.md)
+- [Referencia API](docs/API.md)
+- [Modelo de datos](docs/BASE_DE_DATOS.md)
+- [Operación y hallazgos](docs/OPERACION.md)
+
+Documentación basada en el código local revisado el 3 de noviembre de 2026. No se inspeccionaron el esquema remoto de Supabase ni un despliegue activo.
+
+## Acceso
+
+Las rutas no comprueban autenticación ni propiedad de registros y utilizan un cliente administrativo. Quien alcance las rutas puede operar sobre los datos expuestos. Antes de ofrecer acceso público, implementar una política de acceso en el servidor.
